@@ -251,3 +251,14 @@ TEST("dock: virtual camera state")
 	CHECK(vcamState(true, true, false, false) == VcamState::Activated);
 	CHECK(vcamState(true, true, false, true) == VcamState::Running);
 }
+
+TEST("dock: software encoder warning only when the CPU encodes")
+{
+	/* Nothing running: warn only when no hardware encoder exists. */
+	CHECK(!showSoftwareEncoderWarning(false, false, true));
+	CHECK(showSoftwareEncoderWarning(false, false, false));
+	/* Running: follow the encoders actually used. */
+	CHECK(!showSoftwareEncoderWarning(true, false, true));
+	CHECK(showSoftwareEncoderWarning(true, true, true)); /* x264 forced although VideoToolbox exists */
+	CHECK(!showSoftwareEncoderWarning(true, false, false));
+}

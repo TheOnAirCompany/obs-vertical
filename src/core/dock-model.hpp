@@ -140,4 +140,11 @@ enum class VcamState { Unavailable, NotInstalled, WaitingApproval, Activated, Ru
  * asked the host app to install the extension and macOS has not approved yet. */
 VcamState vcamState(bool supported, bool extensionInstalled, bool installRequested, bool running);
 
+/* ------------------------------------------------------------------ encoder warning */
+
+/* The footer shows no encoder chip, but warns when the video is encoded on the CPU:
+ * while outputs run, when one of their encoders is software; otherwise, when no
+ * hardware encoder exists (the next start would fall back to x264). */
+bool showSoftwareEncoderWarning(bool encodersRunning, bool runningSoftware, bool hardwareAvailable);
+
 } // namespace vertical::core

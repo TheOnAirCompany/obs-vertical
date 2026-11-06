@@ -28,7 +28,7 @@ A second OBS 33 canvas, 1080 × 1920 by default (720 × 1280, 1440 × 2560, 2160
 - Vertical scenes: click a row to put it on air (the program scene shows in red with a **PROGRAM** badge), drag to reorder, and the link icon on each row to link it to 16:9 scenes.
 - Destinations with their platform (the tile follows the server: a TikTok server shows TikTok), live status (connecting, live with time and bitrate, reconnecting with the attempt, error, stopped), a settings button, a ▶ "Go live" / ■ "Stop" button and ⋯ (edit, duplicate, delete); **Start all** / **Stop all**.
 - Recording, replay buffer and virtual camera: tabs in Studio with a large **Stop Recording** button and timer, three compact lines in Compact.
-- Status bar: outputs live, CPU, version and settings.
+- Status bar: outputs live, CPU, version and settings, and a warning when the video is encoded by the CPU (no hardware encoder).
 
 ### Linked scenes
 
