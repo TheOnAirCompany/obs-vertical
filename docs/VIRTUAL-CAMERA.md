@@ -343,4 +343,15 @@ What works is a real deactivation followed by a new activation. So `--install`:
 
 The package's postinstall runs `Vertical Camera.app --install --quit-when-done` (a new
 instance, `open -n`) as the logged-in user when a camera is already activated, so an
-update needs no manual Uninstall / Install.
+update needs no manual Uninstall / Install. The app shows "Ready" once the camera is
+visible, then quits.
+
+Checked on a real Mac (build 5 over build 4, 0.3.0): the camera was back with frames
+about 40 s after the installer, without Uninstall / Install or a restart. What the user
+sees during an update:
+
+1. the installer's administrator password;
+2. a few Touch ID (or password) prompts from macOS for the deactivation and the new
+   activation of the system extension;
+3. once, the Vertical Camera switch in System Settings > General > Login Items &
+   Extensions > Camera Extensions.
