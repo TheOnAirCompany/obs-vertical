@@ -49,6 +49,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QDockWidget>
 #include <QFileInfo>
 #include <QImage>
+#include <QListWidget>
 #include <QMainWindow>
 #include <QTimer>
 
@@ -859,6 +860,17 @@ void runSelfTest()
 		R->add(200, [] { scenesAdd(); });
 		R->add(200, [] { scenesRename(); });
 		R->add(600, [] { scenesCheckRenamed(); });
+		/* A scene another plugin creates in the vertical canvas shows in the dock at once. */
+		R->add(200, [] { obs_scene_release(obs_canvas_scene_create(V().canvas(), "Selftest External")); });
+		R->waitUntil("scene-external-in-dock", 2000, [] {
+			auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+			QDockWidget *dock = main ? main->findChild<QDockWidget *>(QStringLiteral("vertical-dock"))
+						 : nullptr;
+			QListWidget *list = dock ? dock->findChild<QListWidget *>() : nullptr;
+			return list &&
+			       !list->findItems(QStringLiteral("Selftest External"), Qt::MatchExactly).isEmpty();
+		});
+		R->add(100, [] { V().removeScene(QStringLiteral("Selftest External")); });
 		R->add(200, [] { scenesRemove(); });
 		R->add(600, [] { scenesCheckRemoved(); });
 	}

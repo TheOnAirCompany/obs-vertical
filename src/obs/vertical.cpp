@@ -213,6 +213,8 @@ bool Vertical::ensureCanvas()
 	/* Renames inside a canvas other than the main one are only signalled on the canvas. */
 	signal_handler_connect(obs_canvas_get_signal_handler(canvas_), "remove", canvasRemoveCb, this);
 	signal_handler_connect(obs_canvas_get_signal_handler(canvas_), "source_rename", sourceRenameCb, this);
+	/* Scenes another plugin creates in this canvas (Layouts' vertical twin) appear at once. */
+	signal_handler_connect(obs_canvas_get_signal_handler(canvas_), "source_add", canvasSourceAddCb, this);
 
 	if (rawSceneNames().isEmpty())
 		addScene(T("Scene.DefaultName"));
@@ -238,6 +240,7 @@ void Vertical::releaseCanvas()
 		return;
 	signal_handler_disconnect(obs_canvas_get_signal_handler(canvas_), "remove", canvasRemoveCb, this);
 	signal_handler_disconnect(obs_canvas_get_signal_handler(canvas_), "source_rename", sourceRenameCb, this);
+	signal_handler_disconnect(obs_canvas_get_signal_handler(canvas_), "source_add", canvasSourceAddCb, this);
 	obs_canvas_release(canvas_);
 	canvas_ = nullptr;
 	refreshApiSnapshot();
@@ -630,6 +633,26 @@ void Vertical::canvasRemoveCb(void *data, calldata_t *)
 				emit self->canvasChanged();
 				emit self->scenesChanged();
 			}
+		},
+		Qt::QueuedConnection);
+}
+
+void Vertical::canvasSourceAddCb(void *data, calldata_t *cd)
+{
+	auto *self = static_cast<Vertical *>(data);
+	obs_source_t *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
+	if (!source || !obs_source_is_scene(source))
+		return;
+	const QString uuid = QString::fromUtf8(obs_source_get_uuid(source));
+	QMetaObject::invokeMethod(
+		self,
+		[self, uuid] {
+			OBSSourceAutoRelease scene = obs_get_source_by_uuid(uuid.toUtf8().constData());
+			if (!scene || !self->canvas_)
+				return;
+			self->registerSceneHotkey(scene);
+			self->refreshApiSnapshot();
+			emit self->scenesChanged();
 		},
 		Qt::QueuedConnection);
 }

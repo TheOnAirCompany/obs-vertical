@@ -106,6 +106,7 @@ private:
 	static void sourceRenameCb(void *data, calldata_t *cd);
 	static void sourceRemoveCb(void *data, calldata_t *cd);
 	static void canvasRemoveCb(void *data, calldata_t *cd);
+	static void canvasSourceAddCb(void *data, calldata_t *cd);
 
 	core::Settings settings_;
 	core::RenderGate gate_;
