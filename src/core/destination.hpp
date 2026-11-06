@@ -35,7 +35,7 @@ struct StreamUrl {
 	bool valid = false;
 	Protocol protocol = Protocol::Unknown;
 	std::string host;
-	int port = 0; /* explicit port, 0 when absent */
+	int port = 0;      /* explicit port, 0 when absent */
 	std::string path;  /* without the leading slash, may be empty */
 	std::string query; /* without the '?', may be empty */
 	std::string error; /* short reason when !valid */

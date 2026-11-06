@@ -9,9 +9,11 @@ namespace vertical::core {
 namespace {
 
 const PlatformInfo kTikTok{"TikTok", "", true, true, false, true, false, 6000, 8000};
-const PlatformInfo kYouTube{"YouTube", "rtmps://a.rtmps.youtube.com:443/live2", true, true, false, true, true, 9000, 51000};
+const PlatformInfo kYouTube{"YouTube", "rtmps://a.rtmps.youtube.com:443/live2", true, true, false, true, true, 9000,
+			    51000};
 const PlatformInfo kInstagram{"Instagram", "", false, true, false, true, false, 4000, 6000};
-const PlatformInfo kFacebook{"Facebook", "rtmps://live-api-s.facebook.com:443/rtmp/", false, true, false, true, false, 6000, 9000};
+const PlatformInfo kFacebook{
+	"Facebook", "rtmps://live-api-s.facebook.com:443/rtmp/", false, true, false, true, false, 6000, 9000};
 const PlatformInfo kCustomRtmp{"RTMP", "", true, true, false, false, true, 6000, 100000};
 const PlatformInfo kCustomSrt{"SRT", "", false, false, true, false, true, 6000, 100000};
 
@@ -41,12 +43,18 @@ bool validHostChar(char c)
 const char *platformId(Platform p)
 {
 	switch (p) {
-	case Platform::TikTok: return "tiktok";
-	case Platform::YouTube: return "youtube";
-	case Platform::Instagram: return "instagram";
-	case Platform::Facebook: return "facebook";
-	case Platform::CustomRtmp: return "rtmp";
-	case Platform::CustomSrt: return "srt";
+	case Platform::TikTok:
+		return "tiktok";
+	case Platform::YouTube:
+		return "youtube";
+	case Platform::Instagram:
+		return "instagram";
+	case Platform::Facebook:
+		return "facebook";
+	case Platform::CustomRtmp:
+		return "rtmp";
+	case Platform::CustomSrt:
+		return "srt";
 	}
 	return "rtmp";
 }
@@ -69,12 +77,18 @@ const std::vector<Platform> &allPlatforms()
 const PlatformInfo &platformInfo(Platform p)
 {
 	switch (p) {
-	case Platform::TikTok: return kTikTok;
-	case Platform::YouTube: return kYouTube;
-	case Platform::Instagram: return kInstagram;
-	case Platform::Facebook: return kFacebook;
-	case Platform::CustomRtmp: return kCustomRtmp;
-	case Platform::CustomSrt: return kCustomSrt;
+	case Platform::TikTok:
+		return kTikTok;
+	case Platform::YouTube:
+		return kYouTube;
+	case Platform::Instagram:
+		return kInstagram;
+	case Platform::Facebook:
+		return kFacebook;
+	case Platform::CustomRtmp:
+		return kCustomRtmp;
+	case Platform::CustomSrt:
+		return kCustomSrt;
 	}
 	return kCustomRtmp;
 }
@@ -82,19 +96,26 @@ const PlatformInfo &platformInfo(Platform p)
 int defaultPort(Protocol p)
 {
 	switch (p) {
-	case Protocol::Rtmp: return 1935;
-	case Protocol::Rtmps: return 443;
-	default: return 0;
+	case Protocol::Rtmp:
+		return 1935;
+	case Protocol::Rtmps:
+		return 443;
+	default:
+		return 0;
 	}
 }
 
 const char *protocolName(Protocol p)
 {
 	switch (p) {
-	case Protocol::Rtmp: return "RTMP";
-	case Protocol::Rtmps: return "RTMPS";
-	case Protocol::Srt: return "SRT";
-	default: return "?";
+	case Protocol::Rtmp:
+		return "RTMP";
+	case Protocol::Rtmps:
+		return "RTMPS";
+	case Protocol::Srt:
+		return "SRT";
+	default:
+		return "?";
 	}
 }
 
@@ -197,8 +218,8 @@ StreamUrl parseStreamUrl(const std::string &input)
 		return u;
 	}
 	if (!port.empty()) {
-		if (port.size() > 5 || !std::all_of(port.begin(), port.end(),
-						     [](unsigned char c) { return std::isdigit(c) != 0; })) {
+		if (port.size() > 5 ||
+		    !std::all_of(port.begin(), port.end(), [](unsigned char c) { return std::isdigit(c) != 0; })) {
 			u.error = "bad port";
 			return u;
 		}
@@ -255,21 +276,36 @@ Destination makeDestination(Platform p, const std::string &id, const std::string
 const char *issueKey(IssueCode c)
 {
 	switch (c) {
-	case IssueCode::NameEmpty: return "Issue.NameEmpty";
-	case IssueCode::ServerEmpty: return "Issue.ServerEmpty";
-	case IssueCode::ServerInvalid: return "Issue.ServerInvalid";
-	case IssueCode::ProtocolNotAllowed: return "Issue.ProtocolNotAllowed";
-	case IssueCode::PortInvalid: return "Issue.PortInvalid";
-	case IssueCode::SrtPortMissing: return "Issue.SrtPortMissing";
-	case IssueCode::KeyMissing: return "Issue.KeyMissing";
-	case IssueCode::KeyHasSpaces: return "Issue.KeyHasSpaces";
-	case IssueCode::BitrateInvalid: return "Issue.BitrateInvalid";
-	case IssueCode::BitrateAboveLimit: return "Issue.BitrateAboveLimit";
-	case IssueCode::KeyintInvalid: return "Issue.KeyintInvalid";
-	case IssueCode::KeyintNotRecommended: return "Issue.KeyintNotRecommended";
-	case IssueCode::CodecNotAllowed: return "Issue.CodecNotAllowed";
-	case IssueCode::AudioTrackInvalid: return "Issue.AudioTrackInvalid";
-	case IssueCode::AudioBitrateInvalid: return "Issue.AudioBitrateInvalid";
+	case IssueCode::NameEmpty:
+		return "Issue.NameEmpty";
+	case IssueCode::ServerEmpty:
+		return "Issue.ServerEmpty";
+	case IssueCode::ServerInvalid:
+		return "Issue.ServerInvalid";
+	case IssueCode::ProtocolNotAllowed:
+		return "Issue.ProtocolNotAllowed";
+	case IssueCode::PortInvalid:
+		return "Issue.PortInvalid";
+	case IssueCode::SrtPortMissing:
+		return "Issue.SrtPortMissing";
+	case IssueCode::KeyMissing:
+		return "Issue.KeyMissing";
+	case IssueCode::KeyHasSpaces:
+		return "Issue.KeyHasSpaces";
+	case IssueCode::BitrateInvalid:
+		return "Issue.BitrateInvalid";
+	case IssueCode::BitrateAboveLimit:
+		return "Issue.BitrateAboveLimit";
+	case IssueCode::KeyintInvalid:
+		return "Issue.KeyintInvalid";
+	case IssueCode::KeyintNotRecommended:
+		return "Issue.KeyintNotRecommended";
+	case IssueCode::CodecNotAllowed:
+		return "Issue.CodecNotAllowed";
+	case IssueCode::AudioTrackInvalid:
+		return "Issue.AudioTrackInvalid";
+	case IssueCode::AudioBitrateInvalid:
+		return "Issue.AudioBitrateInvalid";
 	}
 	return "Issue.Unknown";
 }
@@ -277,7 +313,9 @@ const char *issueKey(IssueCode c)
 std::vector<Issue> validate(const Destination &d)
 {
 	std::vector<Issue> out;
-	const auto add = [&](IssueCode c, Severity s) { out.push_back({c, s}); };
+	const auto add = [&](IssueCode c, Severity s) {
+		out.push_back({c, s});
+	};
 	const PlatformInfo &info = platformInfo(d.platform);
 
 	if (trim(d.name).empty())

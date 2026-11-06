@@ -33,7 +33,7 @@ void dropPair(Pair &p)
 	p = Pair();
 }
 
-std::map<std::string, Pair> g_static;       /* key -> pair */
+std::map<std::string, Pair> g_static; /* key -> pair */
 obs_hotkey_id g_saveReplay = OBS_INVALID_HOTKEY_ID;
 std::map<std::string, Pair> g_destinations; /* destination id -> pair */
 OBSDataAutoRelease g_bindings;              /* last loaded bindings, for late registrations */
@@ -174,7 +174,8 @@ void syncDestinations()
 		const QString name = QString::fromStdString(d.name);
 		auto it = g_destinations.find(d.id);
 		if (it != g_destinations.end()) {
-			obs_hotkey_pair_set_descriptions(it->second.id, T("Hotkey.StartDestination").arg(name).toUtf8().constData(),
+			obs_hotkey_pair_set_descriptions(it->second.id,
+							 T("Hotkey.StartDestination").arg(name).toUtf8().constData(),
 							 T("Hotkey.StopDestination").arg(name).toUtf8().constData());
 			continue;
 		}

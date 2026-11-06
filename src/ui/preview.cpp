@@ -3,6 +3,9 @@
 #include "obs/vertical.hpp"
 
 #include <graphics/graphics.h>
+#if !defined(_WIN32) && !defined(__APPLE__)
+#include <obs-nix-platform.h>
+#endif
 
 #include <QPlatformSurfaceEvent>
 #include <QResizeEvent>

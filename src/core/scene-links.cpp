@@ -143,7 +143,9 @@ bool moveItem(std::vector<std::string> &order, int from, int to)
 
 std::string uniqueName(const std::string &base, const std::vector<std::string> &taken)
 {
-	const auto has = [&](const std::string &s) { return std::find(taken.begin(), taken.end(), s) != taken.end(); };
+	const auto has = [&](const std::string &s) {
+		return std::find(taken.begin(), taken.end(), s) != taken.end();
+	};
 	if (!has(base))
 		return base;
 	for (int i = 2; i < 10000; i++) {

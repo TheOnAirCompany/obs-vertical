@@ -62,8 +62,8 @@ struct EncoderCandidate {
 bool isHardwareEncoder(const EncoderCandidate &c);
 
 struct EncoderChoice {
-	std::string id;            /* empty when nothing usable was found */
-	std::string codec;         /* codec of the chosen encoder */
+	std::string id;    /* empty when nothing usable was found */
+	std::string codec; /* codec of the chosen encoder */
 	bool hardware = false;
 	bool requestedMissing = false; /* an explicit encoder id was asked but is not available */
 	bool codecChanged = false;     /* hevc asked, h264 hardware chosen instead of software hevc */

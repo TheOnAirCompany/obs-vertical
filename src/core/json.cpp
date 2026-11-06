@@ -18,13 +18,27 @@ void escapeTo(std::string &out, const std::string &s)
 	out += '"';
 	for (unsigned char c : s) {
 		switch (c) {
-		case '"': out += "\\\""; break;
-		case '\\': out += "\\\\"; break;
-		case '\n': out += "\\n"; break;
-		case '\r': out += "\\r"; break;
-		case '\t': out += "\\t"; break;
-		case '\b': out += "\\b"; break;
-		case '\f': out += "\\f"; break;
+		case '"':
+			out += "\\\"";
+			break;
+		case '\\':
+			out += "\\\\";
+			break;
+		case '\n':
+			out += "\\n";
+			break;
+		case '\r':
+			out += "\\r";
+			break;
+		case '\t':
+			out += "\\t";
+			break;
+		case '\b':
+			out += "\\b";
+			break;
+		case '\f':
+			out += "\\f";
+			break;
 		default:
 			if (c < 0x20) {
 				char buf[8];
@@ -137,14 +151,30 @@ private:
 				return fail("bad escape");
 			const char e = text_[pos_++];
 			switch (e) {
-			case '"': out += '"'; break;
-			case '\\': out += '\\'; break;
-			case '/': out += '/'; break;
-			case 'b': out += '\b'; break;
-			case 'f': out += '\f'; break;
-			case 'n': out += '\n'; break;
-			case 'r': out += '\r'; break;
-			case 't': out += '\t'; break;
+			case '"':
+				out += '"';
+				break;
+			case '\\':
+				out += '\\';
+				break;
+			case '/':
+				out += '/';
+				break;
+			case 'b':
+				out += '\b';
+				break;
+			case 'f':
+				out += '\f';
+				break;
+			case 'n':
+				out += '\n';
+				break;
+			case 'r':
+				out += '\r';
+				break;
+			case 't':
+				out += '\t';
+				break;
 			case 'u': {
 				uint32_t cp = 0;
 				if (!hex4(cp))
@@ -173,9 +203,9 @@ private:
 		const size_t start = pos_;
 		if (text_[pos_] == '-')
 			pos_++;
-		while (pos_ < text_.size() && ((text_[pos_] >= '0' && text_[pos_] <= '9') || text_[pos_] == '.' ||
-					       text_[pos_] == 'e' || text_[pos_] == 'E' || text_[pos_] == '+' ||
-					       text_[pos_] == '-'))
+		while (pos_ < text_.size() &&
+		       ((text_[pos_] >= '0' && text_[pos_] <= '9') || text_[pos_] == '.' || text_[pos_] == 'e' ||
+			text_[pos_] == 'E' || text_[pos_] == '+' || text_[pos_] == '-'))
 			pos_++;
 		const std::string s = text_.substr(start, pos_ - start);
 		char *end = nullptr;
@@ -359,12 +389,18 @@ bool Json::operator==(const Json &o) const
 	if (type_ != o.type_)
 		return false;
 	switch (type_) {
-	case Type::Null: return true;
-	case Type::Bool: return bool_ == o.bool_;
-	case Type::Number: return num_ == o.num_;
-	case Type::String: return str_ == o.str_;
-	case Type::Array: return arr_ == o.arr_;
-	case Type::Object: return obj_ == o.obj_;
+	case Type::Null:
+		return true;
+	case Type::Bool:
+		return bool_ == o.bool_;
+	case Type::Number:
+		return num_ == o.num_;
+	case Type::String:
+		return str_ == o.str_;
+	case Type::Array:
+		return arr_ == o.arr_;
+	case Type::Object:
+		return obj_ == o.obj_;
 	}
 	return false;
 }
@@ -378,8 +414,12 @@ void Json::dumpTo(std::string &out, bool pretty, int depth) const
 		}
 	};
 	switch (type_) {
-	case Type::Null: out += "null"; break;
-	case Type::Bool: out += bool_ ? "true" : "false"; break;
+	case Type::Null:
+		out += "null";
+		break;
+	case Type::Bool:
+		out += bool_ ? "true" : "false";
+		break;
 	case Type::Number: {
 		if (!std::isfinite(num_)) {
 			out += "null";
@@ -392,7 +432,9 @@ void Json::dumpTo(std::string &out, bool pretty, int depth) const
 		}
 		break;
 	}
-	case Type::String: escapeTo(out, str_); break;
+	case Type::String:
+		escapeTo(out, str_);
+		break;
 	case Type::Array:
 		out += '[';
 		for (size_t i = 0; i < arr_.size(); i++) {

@@ -30,8 +30,18 @@ public:
 	Json(const char *s) : type_(Type::String), str_(s ? s : "") {}
 	Json(std::string s) : type_(Type::String), str_(std::move(s)) {}
 
-	static Json array() { Json j; j.type_ = Type::Array; return j; }
-	static Json object() { Json j; j.type_ = Type::Object; return j; }
+	static Json array()
+	{
+		Json j;
+		j.type_ = Type::Array;
+		return j;
+	}
+	static Json object()
+	{
+		Json j;
+		j.type_ = Type::Object;
+		return j;
+	}
 
 	Type type() const { return type_; }
 	bool isNull() const { return type_ == Type::Null; }

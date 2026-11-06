@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (in development)
+## 0.1.0 — 2026-11-06
 
 First version.
 
@@ -13,5 +13,6 @@ First version.
 - Render gate: the vertical scene is rendered only while an output, the preview or the virtual camera needs it.
 - Hotkeys for streams, each destination, recording, replay and vertical scenes.
 - Proc handlers `vertical_get_canvas` and `vertical_link_scene` for other plugins.
-- 9:16 virtual camera: output, CoreMediaIO camera extension and host app scaffold (not signed yet).
+- 9:16 virtual camera: output, CoreMediaIO camera extension and its host app, shipped as a separate package (`obs-vertical-camera`) that installs Vertical Camera.app into /Applications.
+- macOS packages signed (Developer ID) and notarized.
 - English and French.

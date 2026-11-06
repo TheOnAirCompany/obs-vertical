@@ -198,47 +198,45 @@ How the build uses the signing inputs:
   extension. `scripts/sign-and-notarize.sh` redoes this by hand, inside-out, with
   `codesign --force --timestamp --options runtime --entitlements ...` (extension first,
   then app, never `--deep` for signing), then
-  `xcrun notarytool submit <zip> --keychain-profile vertical-notary --wait` and
+  `xcrun notarytool submit <zip> --keychain-profile rise-notary --wait` and
   `xcrun stapler staple "Vertical Camera.app"`.
-* Packaging: the plugin `.pkg` should install `Vertical Camera.app` into
-  `/Applications` next to the plugin. Signing the `.pkg` itself needs a **Developer ID
-  Installer** certificate, which is not in the keychain today (only Developer ID
-  Application is); the `.pkg` is then notarized and stapled like the app.
+* Packaging: the plugin `.pkg` installs for the current user only, and macOS activates a
+  camera extension only from `/Applications`, so the camera ships as its own package,
+  `obs-vertical-camera-<version>-macos-universal.pkg`. `scripts/make-pkg.sh` builds it from
+  the signed and notarized app: it installs exactly into `/Applications` (not relocatable),
+  is signed with **Developer ID Installer: Rise (Apps)**, then notarized and stapled.
 
-## 6. What you must do in the Apple Developer portal
+## 6. Apple Developer setup (done)
 
-None of this exists yet (checked: the keychain has "Developer ID Application: Rise (Apps)
-(562LS75A65)", and the installed macOS profiles are team development profiles only).
+Everything below exists on the Rise (Apps) team (562LS75A65) and on the release Mac:
 
-1. **App ID of the host app.** developer.apple.com > Certificates, Identifiers & Profiles
-   > Identifiers > "+" > App IDs > App. Description `Vertical Camera`, Bundle ID
-   **Explicit** `company.theonair.vertical-camera`. Capabilities: tick **System
-   Extension**. Continue > Register.
-2. **App ID of the extension.** Same flow: Description `Vertical Camera Extension`,
-   Bundle ID Explicit `company.theonair.vertical-camera.extension`. No extra capability is
-   required (sandbox and the team-prefixed app group need none). If the portal refuses to
-   build its Developer ID profile later, tick System Extension here too.
-3. **Developer ID profile of the host app.** Profiles > "+" > Distribution > **Developer
-   ID** > App ID `company.theonair.vertical-camera` > certificate "Developer ID
-   Application: Rise (Apps)" > name `Vertical Camera Developer ID` > Generate > Download.
-4. **Developer ID profile of the extension.** Same, App ID
-   `company.theonair.vertical-camera.extension`, name
-   `Vertical Camera Extension Developer ID`.
-5. **Install the profiles** (if you pass names, not paths, to CMake): copy both
-   `.provisionprofile` files into `~/Library/Developer/Xcode/UserData/Provisioning Profiles/`
-   (that is where Xcode 16+ looks; the folder exists on this Mac). Check with
-   `security cms -D -i <file>`: `Entitlements` must contain
-   `com.apple.developer.system-extension.install` for the host app profile.
-6. **Notarization credentials.** account.apple.com > Sign-In and Security >
-   App-Specific Passwords > generate one ("notarytool"). Then, once:
+1. **App IDs** `company.theonair.vertical-camera` (capability **System Extension**) and
+   `company.theonair.vertical-camera.extension`.
+2. **Developer ID profiles** `Vertical Camera Developer ID` (host app, contains
+   `com.apple.developer.system-extension.install`) and
+   `Vertical Camera Extension Developer ID`, installed in
+   `~/Library/Developer/Xcode/UserData/Provisioning Profiles/`.
+3. **Certificates** "Developer ID Application: Rise (Apps)" (code) and "Developer ID
+   Installer: Rise (Apps)" (packages), in the login keychain.
+4. **Notarization credentials**: keychain profile `rise-notary`, made once with
    ```sh
-   xcrun notarytool store-credentials vertical-notary \
-     --apple-id <your Apple ID email> --team-id 562LS75A65 --password <app-specific password>
+   xcrun notarytool store-credentials rise-notary \
+     --apple-id <Apple ID email> --team-id 562LS75A65 --password <app-specific password>
    ```
-   This stores a keychain profile named `vertical-notary`, used by the script and CI.
-7. **(For a signed .pkg)** Certificates > "+" > **Developer ID Installer**, create it
-   from a CSR made in Keychain Access, download and double-click to install. The account
-   holder role is needed to create Developer ID certificates.
+
+Signed build of the camera:
+```sh
+cmake -S camera-extension -B build_camera -G Xcode \
+  -DCODESIGN_IDENTITY="Developer ID Application: Rise (Apps) (562LS75A65)" \
+  -DVERTICAL_CAMERA_PROFILE_HOST="Vertical Camera Developer ID" \
+  -DVERTICAL_CAMERA_PROFILE_EXT="Vertical Camera Extension Developer ID" \
+  -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+cmake --build build_camera --config Release -- ONLY_ACTIVE_ARCH=NO
+camera-extension/scripts/sign-and-notarize.sh "build_camera/Release/Vertical Camera.app" \
+  <host .provisionprofile> <extension .provisionprofile>
+camera-extension/scripts/make-pkg.sh "build_camera/Release/Vertical Camera.app" \
+  obs-vertical-camera-0.1.0-macos-universal.pkg
+```
 
 ## 7. Testing and development
 
@@ -273,8 +271,8 @@ None of this exists yet (checked: the keychain has "Developer ID Application: Ri
 
 ## 9. Limits and open questions
 
-* **Portal setup is required** before any end-to-end test (section 6). Until then only
-  the compile was checked.
+* Activation and the image in a client app (Photo Booth, TikTok LIVE Studio) have not been
+  checked on a real Mac yet: the app is signed, notarized and accepted by Gatekeeper.
 * Which writers may feed the sink: today any local process may connect to the sink
   (`authorizedToStartStream` returns true). Restrict to signed OBS
   (`CMIOExtensionClient` gives pid / signing id)?
@@ -285,10 +283,8 @@ None of this exists yet (checked: the keychain has "Developer ID Application: Ri
   (one approval prompt at install time), or leave it to the dock button?
 * One product name for both: the camera shows as "Vertical Camera"; the app is
   "Vertical Camera.app". Fine, or prefer "Vertical for OBS Camera"?
-* Intel Macs: the code builds for x86_64 (checked), but the packaged universal build of
-  the extension has not been tried.
+* Intel Macs: the packaged build is universal (arm64 and x86_64), not tried on an Intel Mac.
 * macOS 13/14 vs 15+: approval UI differs (section 7); no code difference.
-* The `.pkg` signing needs a Developer ID Installer certificate (not present).
 
 ## 10. What was checked
 
@@ -300,4 +296,8 @@ None of this exists yet (checked: the keychain has "Developer ID Application: Ri
   whose Info.plist has the Mach service and UUIDs above.
 * `src/obs/virtualcam-mac.mm`: `clang++ -fsyntax-only -Wall -Wextra` against the OBS 33
   headers, with and without ARC, arm64 and x86_64: clean.
-* Not done: signing, notarization, activation, a frame actually reaching a client.
+* Signed universal Release build with both Developer ID profiles: `codesign --verify
+  --strict --deep` clean, notarized (Accepted) and stapled; `spctl` says "Notarized
+  Developer ID". The camera package is notarized and accepted by `spctl --type install`,
+  and its payload is `./Vertical Camera.app` installed into `/Applications`.
+* Not done yet: activation on a real Mac and a frame actually reaching a client app.

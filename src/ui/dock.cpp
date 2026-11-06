@@ -50,13 +50,18 @@ QString dotStyle(OutputState st)
 	switch (st) {
 	case OutputState::Starting:
 	case OutputState::Reconnecting:
-	case OutputState::Stopping: c = kBusy; break;
-	case OutputState::Live: c = kLive; break;
+	case OutputState::Stopping:
+		c = kBusy;
+		break;
+	case OutputState::Live:
+		c = kLive;
+		break;
 	case OutputState::Error:
 		c = kLive;
 		ring = true;
 		break;
-	default: break;
+	default:
+		break;
 	}
 	return ring ? QStringLiteral("border:2px solid %1;border-radius:5px;background:transparent;").arg(c)
 		    : QStringLiteral("border-radius:5px;background:%1;").arg(c);
@@ -65,14 +70,19 @@ QString dotStyle(OutputState st)
 QString stateText(const OutputStatus &st)
 {
 	switch (st.state) {
-	case OutputState::Starting: return T("Status.Starting");
-	case OutputState::Reconnecting: return T("Status.Reconnecting");
-	case OutputState::Stopping: return T("Status.Stopping");
+	case OutputState::Starting:
+		return T("Status.Starting");
+	case OutputState::Reconnecting:
+		return T("Status.Reconnecting");
+	case OutputState::Stopping:
+		return T("Status.Stopping");
 	case OutputState::Live:
 		return QStringLiteral("%1 · %2 kbps").arg(elapsed(st.startedNs)).arg((int)st.kbps) +
 		       (st.dropped ? QStringLiteral(" · ") + T("Status.Dropped").arg(st.dropped) : QString());
-	case OutputState::Error: return st.error.isEmpty() ? T("Status.Error") : st.error;
-	default: return T("Status.Idle");
+	case OutputState::Error:
+		return st.error.isEmpty() ? T("Status.Error") : st.error;
+	default:
+		return T("Status.Idle");
 	}
 }
 
@@ -215,8 +225,9 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 	connect(down, &QToolButton::clicked, this, [this] { moveScene(1); });
 	connect(link, &QToolButton::clicked, this, &Dock::linkCurrentMainScene);
 	connect(linked_, &QCheckBox::toggled, this, [](bool on) { Vertical::instance().setLinkedMode(on); });
-	connect(scenes_, &QListWidget::itemClicked, this,
-		[](QListWidgetItem *item) { Vertical::instance().setCurrentScene(item->data(Qt::UserRole).toString()); });
+	connect(scenes_, &QListWidget::itemClicked, this, [](QListWidgetItem *item) {
+		Vertical::instance().setCurrentScene(item->data(Qt::UserRole).toString());
+	});
 	connect(scenes_, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *) { renameScene(); });
 	connect(scenes_, &QListWidget::customContextMenuRequested, this, &Dock::onSceneMenu);
 	connect(scenes_->model(), &QAbstractItemModel::rowsMoved, this, [this] {
@@ -400,13 +411,15 @@ void Dock::refreshStatus()
 		info->setText(stateText(st));
 		info->setToolTip(st.error);
 		const bool running = st.state != OutputState::Idle && st.state != OutputState::Error;
-		row->findChild<QPushButton *>(QStringLiteral("toggle"))->setText(running ? T("Dock.Stop") : T("Dock.Start"));
+		row->findChild<QPushButton *>(QStringLiteral("toggle"))
+			->setText(running ? T("Dock.Stop") : T("Dock.Start"));
 	}
 	const OutputStatus rec = o.recordingStatus();
 	record_->setChecked(o.recordingActive());
 	record_->setText(o.recordingActive() ? T("Dock.StopRecord") : T("Dock.Record"));
-	recordTime_->setText(rec.state == OutputState::Live ? elapsed(rec.startedNs)
-							    : (rec.state == OutputState::Error ? rec.error : QString()));
+	recordTime_->setText(rec.state == OutputState::Live
+				     ? elapsed(rec.startedNs)
+				     : (rec.state == OutputState::Error ? rec.error : QString()));
 	replay_->setChecked(o.replayActive());
 	saveReplay_->setEnabled(o.replayActive());
 	virtualCam_->setChecked(o.virtualCamActive());

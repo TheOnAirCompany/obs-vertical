@@ -10,7 +10,7 @@ Vertical for OBS is a native OBS Studio plugin that adds a **vertical canvas** w
 
 </div>
 
-> **Status: 0.1.0, first development version.** Builds against OBS Studio 33.0.1 on macOS (universal). Not yet tested inside a running OBS. The virtual camera needs a signed camera extension that is not distributed yet ([docs/VIRTUAL-CAMERA.md](docs/VIRTUAL-CAMERA.md)). Keep a backup of your scene collection.
+> **Status: 0.1.0, first version.** For OBS Studio 33.0.1. Tested on macOS inside OBS: canvas, scenes, recording and real streaming to three RTMP servers sharing one hardware encoder. Windows and Linux builds pass CI but have not run inside OBS yet. The 9:16 virtual camera ships as a separate signed package; its activation has not been tested on a real Mac yet ([docs/VIRTUAL-CAMERA.md](docs/VIRTUAL-CAMERA.md)). Keep a backup of your scene collection.
 
 ## What it adds
 
@@ -48,7 +48,16 @@ In **Settings > Hotkeys**: start/stop all streams, start/stop each destination, 
 
 ## Install
 
-OBS Studio **33.0.1 or later** is required. Packages are not published yet: build from source (below), then copy `obs-vertical.plugin` to `~/Library/Application Support/obs-studio/plugins/`. Restart OBS and open **Docks > Vertical**.
+Download the file for your system from the [releases](https://github.com/TheOnAirCompany/obs-vertical/releases). OBS Studio **33.0.1 or later** is required.
+
+| System | File | How to install |
+|---|---|---|
+| macOS 13+ (Apple Silicon and Intel) | `obs-vertical-<version>-macos-universal.pkg` | Open the package and follow the installer (it installs for the current user). Signed and notarized by Apple. |
+| macOS, virtual camera (optional) | `obs-vertical-camera-<version>-macos-universal.pkg` | Installs **Vertical Camera** into Applications. Open it once and click Install, then allow it in System Settings > General > Login Items & Extensions > Camera Extensions (macOS asks once). |
+| Windows 10/11 x64 | `obs-vertical-<version>-windows-x64.zip` | Extract the `obs-vertical` folder into `C:\ProgramData\obs-studio\plugins\`. |
+| Ubuntu x86_64 | `obs-vertical-<version>-x86_64-linux-gnu.deb` | `sudo apt install ./obs-vertical-<version>-x86_64-linux-gnu.deb`. Needs the `obs-studio` package **33 or later** installed system-wide. |
+
+Restart OBS and open **Docks > Vertical**.
 
 To uninstall, remove the plugin. The vertical canvas and its scenes stay in your scene collection (OBS keeps them, hidden from the main scene list) and come back when the plugin is installed again.
 

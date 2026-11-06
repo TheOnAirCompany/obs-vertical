@@ -16,7 +16,7 @@ struct Size {
 };
 
 struct CanvasPreset {
-	const char *id;       /* "1080x1920" */
+	const char *id; /* "1080x1920" */
 	Size size;
 	const char *labelKey; /* locale key */
 };

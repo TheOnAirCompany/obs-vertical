@@ -55,8 +55,8 @@ void selectSceneHotkey(void *, obs_hotkey_id, obs_hotkey_t *hotkey, bool pressed
 	if (!source)
 		return;
 	const QString name = toQ(obs_source_get_name(source));
-	QMetaObject::invokeMethod(&Vertical::instance(), [name] { Vertical::instance().setCurrentScene(name); },
-				  Qt::QueuedConnection);
+	QMetaObject::invokeMethod(
+		&Vertical::instance(), [name] { Vertical::instance().setCurrentScene(name); }, Qt::QueuedConnection);
 }
 
 } // namespace
@@ -350,8 +350,8 @@ QString Vertical::addScene(const QString &baseName)
 	std::vector<std::string> taken;
 	for (const QString &n : rawSceneNames())
 		taken.push_back(toStd(n));
-	const std::string name = core::uniqueName(toStd(baseName.trimmed().isEmpty() ? T("Scene.DefaultName") : baseName),
-						  taken);
+	const std::string name =
+		core::uniqueName(toStd(baseName.trimmed().isEmpty() ? T("Scene.DefaultName") : baseName), taken);
 	obs_scene_t *scene = obs_canvas_scene_create(canvas_, name.c_str());
 	if (!scene)
 		return {};

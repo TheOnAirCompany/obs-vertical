@@ -271,7 +271,7 @@ void Outputs::finish(const std::string &id)
 	releaseEncoders(r);
 	if (r.holdsRender)
 		Vertical::instance().releaseRender(id == kVirtualCamId ? core::RenderReason::VirtualCam
-								      : core::RenderReason::Output);
+								       : core::RenderReason::Output);
 	if (running_.empty())
 		stats_.stop();
 	emit statusChanged();
@@ -632,8 +632,8 @@ void Outputs::tick()
 			continue;
 		const uint64_t bytes = obs_output_get_total_bytes(r.output);
 		if (r.lastBytesNs && now > r.lastBytesNs && bytes >= r.lastBytes)
-			r.status.kbps = (double)(bytes - r.lastBytes) * 8.0 / 1000.0 /
-					((double)(now - r.lastBytesNs) / 1e9);
+			r.status.kbps =
+				(double)(bytes - r.lastBytes) * 8.0 / 1000.0 / ((double)(now - r.lastBytesNs) / 1e9);
 		r.lastBytes = bytes;
 		r.lastBytesNs = now;
 		r.status.dropped = obs_output_get_frames_dropped(r.output);
@@ -717,8 +717,8 @@ void Outputs::stoppedCb(void *data, calldata_t *cd)
 	const int code = (int)calldata_int(cd, "code");
 	const char *err = obs_output_get_last_error(output);
 	const QString msg = QString::fromUtf8(err ? err : "");
-	QMetaObject::invokeMethod(self, [self, output, code, msg] { self->onStopped(output, code, msg); },
-				  Qt::QueuedConnection);
+	QMetaObject::invokeMethod(
+		self, [self, output, code, msg] { self->onStopped(output, code, msg); }, Qt::QueuedConnection);
 }
 
 void Outputs::reconnectCb(void *data, calldata_t *cd)

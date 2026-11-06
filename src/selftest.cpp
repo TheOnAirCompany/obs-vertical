@@ -152,11 +152,11 @@ Runner *R = nullptr;
 const char *kMainName = "Selftest Main";
 
 struct State {
-	QString previousScene;  /* current vertical scene before the test */
-	QString scene;          /* scene made by the scenes group */
-	QString recordScene;    /* scene recorded by the gate/record groups */
-	QString folder;         /* QDir::temp()/vertical-selftest */
-	QString noisePath;      /* noise image shown during the recordings */
+	QString previousScene; /* current vertical scene before the test */
+	QString scene;         /* scene made by the scenes group */
+	QString recordScene;   /* scene recorded by the gate/record groups */
+	QString folder;        /* QDir::temp()/vertical-selftest */
+	QString noisePath;     /* noise image shown during the recordings */
 	core::RecordingSettings savedRecording;
 	bool recordingSaved = false;
 	bool holdsPreview = false; /* the scenes group holds the gate (Preview reason) */
@@ -407,8 +407,7 @@ void testCanvas()
 	R->check(linked && linkOf(kMainName) == target, "proc-link-scene",
 		 QStringLiteral("'%1' -> '%2' %3").arg(QString::fromUtf8(kMainName), linkOf(kMainName), error));
 	const bool bad = procLink(kMainName, QStringLiteral("No Such Vertical Scene 7f3a"), &error);
-	R->check(!bad && !error.isEmpty() && linkOf(kMainName) == target, "proc-link-unknown-scene-refused",
-		 error);
+	R->check(!bad && !error.isEmpty() && linkOf(kMainName) == target, "proc-link-unknown-scene-refused", error);
 	const bool unlinked = procLink(kMainName, QString(), &error);
 	R->check(unlinked && linkOf(kMainName).isEmpty(), "proc-unlink-scene", error);
 }
@@ -650,9 +649,9 @@ void poolCheck()
 			 .arg(v1 ? QString::fromUtf8(obs_encoder_get_name(v1)) : QStringLiteral("none"),
 			      v2 ? QString::fromUtf8(obs_encoder_get_name(v2)) : QStringLiteral("none"), summary));
 	R->check(a1 && a1 == a2, "pool-shared-audio-encoder",
-		 QStringLiteral("%1 / %2")
-			 .arg(a1 ? QString::fromUtf8(obs_encoder_get_name(a1)) : QStringLiteral("none"),
-			      a2 ? QString::fromUtf8(obs_encoder_get_name(a2)) : QStringLiteral("none")));
+		 QStringLiteral("%1 / %2").arg(
+			 a1 ? QString::fromUtf8(obs_encoder_get_name(a1)) : QStringLiteral("none"),
+			 a2 ? QString::fromUtf8(obs_encoder_get_name(a2)) : QStringLiteral("none")));
 }
 
 void poolStop()
@@ -667,7 +666,8 @@ void streamAdd()
 {
 	core::Settings &s = V().settings();
 	g.destinationId = core::makeId((unsigned long long)QDateTime::currentMSecsSinceEpoch(), s.destinationIds());
-	core::Destination d = core::makeDestination(core::Platform::CustomRtmp, g.destinationId, "Selftest Unreachable");
+	core::Destination d =
+		core::makeDestination(core::Platform::CustomRtmp, g.destinationId, "Selftest Unreachable");
 	d.server = "rtmp://127.0.0.1:1/live";
 	d.streamKey = "test";
 	d.enabled = false; /* never picked by "start all" */
@@ -713,7 +713,6 @@ void streamRemove()
 	R->check(s.findDestination(g.destinationId) == nullptr, "stream-destination-removed");
 	g.destinationId.clear();
 }
-
 
 /* ------------------------------------------------------------------ multistream */
 /* Real streaming to three local RTMP servers (VERTICAL_SELFTEST_RTMP_PORT = first port of
@@ -871,8 +870,7 @@ void runSelfTest()
 		});
 		R->add(800, [] { gateIdle("gate-idle-without-output"); });
 		R->add(0, [] { gateStart(); });
-		R->waitUntil("gate-output-live", 5000,
-			     [] { return O().recordingStatus().state == OutputState::Live; });
+		R->waitUntil("gate-output-live", 5000, [] { return O().recordingStatus().state == OutputState::Live; });
 		R->add(500, [] { O().stopRecording(); });
 		R->waitUntil("gate-output-stopped", 10000, [] { return !O().recordingActive(); });
 		R->add(300, [] { gateIdle("gate-idle-after-stop"); });
@@ -891,9 +889,8 @@ void runSelfTest()
 		R->waitUntil("record-stopped", 15000, [] { return !O().recordingActive(); });
 		R->add(500, [] { recordCheckFile(); });
 		R->add(300, [] { poolStart(); });
-		R->waitUntil("pool-both-live", 5000, [] {
-			return O().recordingStatus().state == OutputState::Live && O().replayActive();
-		});
+		R->waitUntil("pool-both-live", 5000,
+			     [] { return O().recordingStatus().state == OutputState::Live && O().replayActive(); });
 		R->add(500, [] { poolCheck(); });
 		R->add(0, [] { poolStop(); });
 		R->waitUntil("pool-stopped", 15000, [] { return !O().recordingActive() && !O().replayActive(); });

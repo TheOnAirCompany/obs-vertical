@@ -9,7 +9,7 @@
 #
 # Environment:
 #   CODESIGN_IDENT   signing identity (default: Developer ID Application: Rise (Apps) (562LS75A65))
-#   NOTARY_PROFILE   notarytool keychain profile (default: vertical-notary)
+#   NOTARY_PROFILE   notarytool keychain profile (default: rise-notary)
 #   ENTITLEMENTS_DIR folder with app.entitlements and extension.entitlements
 #                    (default: <build dir>/generated, written by CMake)
 #   SKIP_NOTARIZE=1  sign only
@@ -19,7 +19,7 @@ app=${1:?path to Vertical Camera.app}
 host_profile=${2:?host app .provisionprofile}
 ext_profile=${3:?extension .provisionprofile}
 ident=${CODESIGN_IDENT:-"Developer ID Application: Rise (Apps) (562LS75A65)"}
-notary=${NOTARY_PROFILE:-vertical-notary}
+notary=${NOTARY_PROFILE:-rise-notary}
 ents=${ENTITLEMENTS_DIR:-"${app:h:h}/generated"}
 ext="${app}/Contents/Library/SystemExtensions/company.theonair.vertical-camera.extension.systemextension"
 

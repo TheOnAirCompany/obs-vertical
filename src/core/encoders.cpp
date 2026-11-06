@@ -76,14 +76,16 @@ EncoderPlan planEncoders(const std::vector<EncoderUser> &users)
 	EncoderPlan plan;
 	for (const EncoderUser &u : users) {
 		const std::string vk = u.settings.videoKey();
-		auto v = std::find_if(plan.video.begin(), plan.video.end(), [&](const VideoGroup &g) { return g.key == vk; });
+		auto v = std::find_if(plan.video.begin(), plan.video.end(),
+				      [&](const VideoGroup &g) { return g.key == vk; });
 		if (v == plan.video.end())
 			plan.video.push_back({vk, u.settings.video, {u.id}});
 		else
 			v->users.push_back(u.id);
 
 		const std::string ak = u.settings.audioKey();
-		auto a = std::find_if(plan.audio.begin(), plan.audio.end(), [&](const AudioGroup &g) { return g.key == ak; });
+		auto a = std::find_if(plan.audio.begin(), plan.audio.end(),
+				      [&](const AudioGroup &g) { return g.key == ak; });
 		if (a == plan.audio.end())
 			plan.audio.push_back({ak, u.settings.audio, {u.id}});
 		else
@@ -99,7 +101,8 @@ std::vector<DestinationGroup> groupDestinations(const std::vector<Destination> &
 		if (!d.enabled)
 			continue;
 		const std::string k = d.encoding.key();
-		auto g = std::find_if(groups.begin(), groups.end(), [&](const DestinationGroup &x) { return x.key == k; });
+		auto g = std::find_if(groups.begin(), groups.end(),
+				      [&](const DestinationGroup &x) { return x.key == k; });
 		if (g == groups.end())
 			groups.push_back({k, d.encoding, {d.id}});
 		else

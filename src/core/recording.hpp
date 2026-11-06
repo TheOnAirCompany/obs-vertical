@@ -20,7 +20,11 @@ struct RecordingSettings {
 	std::string filenameFormat = "Vertical %CCYY-%MM-%DD %hh-%mm-%ss";
 	EncoderSettings encoding;
 
-	RecordingSettings() { encoding.video.bitrateKbps = 12000; encoding.video.rateControl = "CBR"; }
+	RecordingSettings()
+	{
+		encoding.video.bitrateKbps = 12000;
+		encoding.video.rateControl = "CBR";
+	}
 };
 
 struct ReplaySettings {

@@ -292,8 +292,7 @@ void SettingsDialog::accept()
 		return;
 	}
 	work_.recording.path = recordPath_->text().trimmed().toStdString();
-	work_.recording.format =
-		core::recordFormatFromId(recordFormat_->currentData().toString().toStdString());
+	work_.recording.format = core::recordFormatFromId(recordFormat_->currentData().toString().toStdString());
 	work_.recording.encoding.video.bitrateKbps = recordKbps_->value();
 	work_.replay.seconds = replaySeconds_->value();
 	work_.replay.maxMb = replayMb_->value();
