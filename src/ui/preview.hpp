@@ -98,6 +98,8 @@ public:
 	void setCollapsed(bool collapsed);
 	bool collapsed() const { return collapsed_; }
 	QWidget *expandBar() const { return expandBar_; }
+	/* Where the picture is drawn (empty while collapsed). */
+	QRect pictureRect() const { return collapsed_ ? QRect() : fitRect(); }
 
 	bool hasHeightForWidth() const override { return !collapsed_; }
 	int heightForWidth(int w) const override;
@@ -107,6 +109,7 @@ public:
 signals:
 	void collapsedChanged(bool collapsed);
 	void detachRequested();
+	void pictureRectChanged();
 
 protected:
 	void resizeEvent(QResizeEvent *e) override;

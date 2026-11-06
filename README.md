@@ -46,9 +46,15 @@ Record the vertical program in hybrid MP4 (safe if OBS stops unexpectedly), hybr
 
 Hardware encoders first (Apple VideoToolbox on Mac), x264 only when there is no hardware encoder. The vertical scene is rendered **only while something needs it**: an output, the visible preview or the virtual camera. See [Architecture](docs/ARCHITECTURE.md#3-cpu-strategy).
 
-### 9:16 virtual camera (macOS)
+### 9:16 virtual camera and microphone (macOS)
 
 A separate camera, **Vertical Camera**, for TikTok LIVE Studio and other apps, independent from OBS's own virtual camera (which stays on the 16:9 program). It uses a CoreMediaIO camera extension installed by a small companion app. See [Virtual camera](docs/VIRTUAL-CAMERA.md).
+
+With it, a microphone, **Vertical Audio**, carries the vertical mix in real time, aligned with the camera image (an audio/video offset setting and a sync test help check it). See [Vertical Audio](docs/VIRTUAL-AUDIO.md).
+
+### Vertical audio mix
+
+Vertical manages one OBS mixer track for the vertical output: the sources of your main mix, minus the ones you untick in **Settings > Audio** (for example the music, to avoid a copyright strike on TikTok). Mute and volume in the OBS mixer apply to it too. Vertical's streams and recordings use it, and a thin stereo meter under the dock preview shows its level.
 
 ### Hotkeys
 
@@ -61,7 +67,7 @@ Download the file for your system from the [releases](https://github.com/TheOnAi
 | System | File | How to install |
 |---|---|---|
 | macOS 13+ (Apple Silicon and Intel) | `obs-vertical-<version>-macos-universal.pkg` | Open the package and follow the installer (it installs for the current user). Signed and notarized by Apple. |
-| macOS, virtual camera (optional) | `obs-vertical-camera-<version>-macos-universal.pkg` | Installs **Vertical Camera** into Applications. Open it once and click Install, then allow it in System Settings > General > Login Items & Extensions > Camera Extensions (macOS asks once). |
+| macOS, camera and microphone (optional) | `obs-vertical-camera-<version>-macos-universal.pkg` | **Vertical Camera & Audio**: installs **Vertical Camera** into Applications and the **Vertical Audio** microphone driver into /Library/Audio/Plug-Ins/HAL (administrator password; the Mac's sound stops for about a second while the audio system restarts). For the camera, open Vertical Camera once and click Install, then allow it in System Settings > General > Login Items & Extensions > Camera Extensions (macOS asks once). |
 | Windows 10/11 x64 | `obs-vertical-<version>-windows-x64.zip` | Extract the `obs-vertical` folder into `C:\ProgramData\obs-studio\plugins\`. |
 | Ubuntu x86_64 | `obs-vertical-<version>-x86_64-linux-gnu.deb` | `sudo apt install ./obs-vertical-<version>-x86_64-linux-gnu.deb`. Needs the `obs-studio` package **33 or later** installed system-wide. |
 
@@ -76,6 +82,7 @@ To uninstall, remove the plugin. The vertical canvas and its scenes stay in your
 | [Architecture](docs/ARCHITECTURE.md) | Layers, canvas, CPU strategy, outputs, persistence, threads |
 | [Integration](docs/INTEGRATION.md) | Proc handlers for other plugins (`vertical_get_canvas`, `vertical_link_scene`) |
 | [Virtual camera](docs/VIRTUAL-CAMERA.md) | Camera extension design, signing, notarization, Apple Developer steps |
+| [Vertical Audio](docs/VIRTUAL-AUDIO.md) | Vertical mix, audio driver, latency and audio/video offset, sync test and measurement |
 
 ## Building
 

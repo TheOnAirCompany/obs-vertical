@@ -33,6 +33,7 @@ namespace vertical::ui {
 class Chip;
 class DestinationRow;
 class ElidedLabel;
+class MixMeter;
 class PreviewFrame;
 class PreviewWindow;
 class SceneList;
@@ -131,6 +132,8 @@ private:
 
 	/* preview and scenes */
 	PreviewFrame *preview_ = nullptr;
+	QWidget *previewBox_ = nullptr; /* the preview and the output meter under it */
+	MixMeter *meter_ = nullptr;
 	QPointer<PreviewWindow> previewWindow_;
 	QWidget *scenesHeader_ = nullptr;
 	QLabel *scenesCount_ = nullptr;

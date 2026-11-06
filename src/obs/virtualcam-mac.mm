@@ -37,13 +37,18 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <media-io/video-io.h>
 #include <plugin-support.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstring>
+#include <deque>
 #include <mutex>
 #include <string>
 #include <vector>
 
 #include "virtualcam.hpp"
+#include "av-sync.hpp"
+
+#include <util/platform.h>
 
 namespace vertical::virtualcam {
 
@@ -65,6 +70,9 @@ namespace vertical::virtualcam {
             CFStringRef matrix = nullptr; /* YCbCr matrix attachment, from the canvas colorspace */
             std::atomic<bool> running {false};
             uint64_t dropped = 0;
+            /* Audio/video offset: frames held back before they go to the sink. They are
+             * the pooled IOSurface buffers themselves (no copy); the pool grows to fit. */
+            std::deque<CMSampleBufferRef> delayed;
         };
 
         /* ---------------------------------------------------------------- CMIO lookup */
@@ -147,6 +155,9 @@ namespace vertical::virtualcam {
         void releaseMedia(VirtualCam *vc)
         {
             std::lock_guard<std::mutex> guard(vc->lock);
+            for (CMSampleBufferRef held : vc->delayed)
+                CFRelease(held);
+            vc->delayed.clear();
             if (vc->device && vc->sink)
                 CMIODeviceStopStream(vc->device, vc->sink);
             if (vc->queue) {
@@ -282,11 +293,28 @@ namespace vertical::virtualcam {
                 memcpy(dst + y * dstStride, src + y * srcStride, rowBytes);
         }
 
+        /* Hands one frame to the extension. Live, not buffered: when the extension is
+         * behind, the oldest frame in the sink queue is dropped. */
+        void enqueue(VirtualCam *vc, CMSampleBufferRef sample)
+        {
+            if (CMSimpleQueueGetCount(vc->queue) >= CMSimpleQueueGetCapacity(vc->queue)) {
+                if (const void *old = CMSimpleQueueDequeue(vc->queue))
+                    CFRelease(old);
+                vc->dropped++;
+            }
+            /* On success the queue owns the reference; CoreMediaIO releases it once sent. */
+            if (CMSimpleQueueEnqueue(vc->queue, sample) != noErr) {
+                CFRelease(sample);
+                vc->dropped++;
+            }
+        }
+
         void rawVideo(void *data, struct video_data *frame)
         {
             auto *vc = static_cast<VirtualCam *>(data);
             if (!vc->running)
                 return;
+            vertical::avsync::reportVideoLag((double) (int64_t) (os_gettime_ns() - frame->timestamp) / 1e6);
 
             std::lock_guard<std::mutex> guard(vc->lock);
             if (!vc->queue || !vc->pool)
@@ -332,16 +360,18 @@ namespace vertical::virtualcam {
                 return;
             }
 
-            /* Live, not buffered: when the extension is behind, drop the oldest frame. */
-            if (CMSimpleQueueGetCount(vc->queue) >= CMSimpleQueueGetCapacity(vc->queue)) {
-                if (const void *old = CMSimpleQueueDequeue(vc->queue))
-                    CFRelease(old);
-                vc->dropped++;
+            /* A negative offset delays the image by whole frames: hold this many. When
+             * the delay shrinks, the extra frames are dropped (never sent in a burst). */
+            const size_t hold = (size_t) std::max(0, vertical::avsync::videoDelayFrames());
+            vc->delayed.push_back(sample);
+            while (vc->delayed.size() > hold + 1) {
+                CFRelease(vc->delayed.front());
+                vc->delayed.pop_front();
             }
-            /* On success the queue owns the reference; CoreMediaIO releases it once sent. */
-            if (CMSimpleQueueEnqueue(vc->queue, sample) != noErr) {
-                CFRelease(sample);
-                vc->dropped++;
+            if (vc->delayed.size() > hold) {
+                CMSampleBufferRef due = vc->delayed.front();
+                vc->delayed.pop_front();
+                enqueue(vc, due);
             }
         }
 

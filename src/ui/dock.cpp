@@ -9,6 +9,7 @@
 #include "ui/dock-decisions.hpp"
 #include "ui/dock-rows.hpp"
 #include "ui/dock-style.hpp"
+#include "ui/mix-meter.hpp"
 #include "ui/preview.hpp"
 #include "ui/settings-dialog.hpp"
 
@@ -316,9 +317,24 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 	bodyLayout_->addWidget(colB_, 1);
 	root->addWidget(body_, 1);
 
-	/* Preview. */
-	preview_ = new PreviewFrame(colA_);
+	/* Preview, with the output meter of the vertical mix right under it. */
+	previewBox_ = new QWidget(colA_);
+	auto *previewLayout = new QVBoxLayout(previewBox_);
+	previewLayout->setContentsMargins(0, 0, 0, 0);
+	previewLayout->setSpacing(0);
+	preview_ = new PreviewFrame(previewBox_);
 	preview_->setCollapsed(!v.settings().previewVisible);
+	meter_ = new MixMeter(previewBox_);
+	meter_->setToolTip(T("Dock.MeterTip"));
+	previewLayout->addWidget(preview_);
+	previewLayout->addWidget(meter_, 0, Qt::AlignHCenter);
+	/* The meter is as wide as the picture (full width while the preview is collapsed). */
+	connect(preview_, &PreviewFrame::pictureRectChanged, this, [this] {
+		const QRect r = preview_->pictureRect();
+		const int w = r.isValid() ? r.width() : previewBox_->width();
+		if (meter_->width() != w || meter_->minimumWidth() != w)
+			meter_->setFixedWidth(std::max(1, w));
+	});
 
 	/* Scenes. */
 	scenesHeader_ = buildScenesHeader();
@@ -898,7 +914,7 @@ void Dock::applyMode(core::DockMode mode)
 											 : 0;
 	preview_->setMaxPreviewHeight(maxPreview);
 
-	colALayout_->addWidget(preview_);
+	colALayout_->addWidget(previewBox_);
 	if (studio) {
 		colA_->setFixedWidth(tokens::kStudioLeftColumn);
 		colALayout_->addWidget(scenesHeader_);
@@ -914,6 +930,7 @@ void Dock::applyMode(core::DockMode mode)
 		colALayout_->addWidget(destinationsBox_);
 		colALayout_->addWidget(linesBox_);
 	}
+	previewBox_->show();
 	preview_->show();
 	scenes_->show();
 	destinationsBox_->show();

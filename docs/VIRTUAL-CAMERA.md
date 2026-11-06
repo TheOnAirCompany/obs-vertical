@@ -4,6 +4,10 @@ Goal: TikTok LIVE Studio (and any app that reads a camera) sees a camera named
 **Vertical Camera** that shows the vertical canvas of the plugin in 9:16, while OBS's own
 virtual camera stays free for the main 16:9 program.
 
+Since 0.3 the camera ships with the **Vertical Audio** microphone (the vertical mix) in one
+package, "Vertical Camera & Audio": see [VIRTUAL-AUDIO.md](VIRTUAL-AUDIO.md) for the driver,
+the vertical mix and the audio/video offset of the pair.
+
 Status: design + scaffold. The extension, its host app and the plugin-side sender compile
 (see "What was checked"). Nothing is signed, installed or tested on a live system yet:
 that needs the Apple portal steps in section 6.
@@ -103,6 +107,10 @@ not ours to modify. So we ship a tiny app, **Vertical Camera.app**:
   `CMSampleBufferCreateForImageBuffer` with the OBS timestamp (host clock, ns),
   `CMSimpleQueueEnqueue`. When the queue is full the oldest frame is dropped (live, never
   late); frames not handed over at stop are released.
+* Audio/video offset (0.3): a negative offset delays the image by whole frames, held
+  before `CMSimpleQueueEnqueue` (the pooled IOSurface buffers themselves, no copy; at
+  most 500 ms); the frame lag is measured on every frame for the default offset
+  (VIRTUAL-AUDIO.md, section 3).
 * Errors (`obs_output_get_last_error`): `VirtualCam.Error.NotInstalled` (device not
   found: extension not installed or not approved), `VirtualCam.Error.NotStarted`
   (device found but the sink cannot start), `VirtualCam.Error.NoCanvas`.
@@ -149,11 +157,15 @@ camera-extension/
   extension/StreamSource.swift
   extension/StreamSink.swift
   app/main.swift, app/App.swift   host app: Install / Uninstall
+  audio-driver/VerticalAudio.cpp  Vertical Audio driver (AudioServerPlugIn), VIRTUAL-AUDIO.md
+  tools/sync-measure/main.swift   vertical-sync-measure (audio/video offset, latencies)
+  cmake/driver-Info.plist.in      CFPlugIn factory of the driver
   cmake/extension-Info.plist.in   CMIOExtension dict, UUIDs
   cmake/app-Info.plist.in
   cmake/extension.entitlements.in sandbox + app group
   cmake/app.entitlements.in       com.apple.developer.system-extension.install + app group
-  scripts/sign-and-notarize.sh    inside-out re-sign, notarize, staple
+  scripts/sign-and-notarize.sh    inside-out re-sign (+ driver), notarize, staple
+  scripts/make-pkg.sh             "Vertical Camera & Audio" package
 src/obs/virtualcam.hpp, src/obs/virtualcam-mac.mm
 ```
 
@@ -202,9 +214,12 @@ How the build uses the signing inputs:
   `xcrun stapler staple "Vertical Camera.app"`.
 * Packaging: the plugin `.pkg` installs for the current user only, and macOS activates a
   camera extension only from `/Applications`, so the camera ships as its own package,
-  `obs-vertical-camera-<version>-macos-universal.pkg`. `scripts/make-pkg.sh` builds it from
-  the signed and notarized app: it installs exactly into `/Applications` (not relocatable),
-  is signed with **Developer ID Installer: Rise (Apps)**, then notarized and stapled.
+  `obs-vertical-camera-<version>-macos-universal.pkg`, displayed as "Vertical Camera &
+  Audio" since 0.3. `scripts/make-pkg.sh` builds it from the signed and notarized app and
+  the signed audio driver: the app installs exactly into `/Applications`, the driver into
+  `/Library/Audio/Plug-Ins/HAL` (neither relocatable; administrator password), a
+  postinstall script restarts coreaudiod; the product is signed with **Developer ID
+  Installer: Rise (Apps)**, then notarized and stapled.
 
 ## 6. Apple Developer setup (done)
 
@@ -233,9 +248,10 @@ cmake -S camera-extension -B build_camera -G Xcode \
   -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 cmake --build build_camera --config Release -- ONLY_ACTIVE_ARCH=NO
 camera-extension/scripts/sign-and-notarize.sh "build_camera/Release/Vertical Camera.app" \
-  <host .provisionprofile> <extension .provisionprofile>
+  <host .provisionprofile> <extension .provisionprofile> build_camera/Release/VerticalAudio.driver
 camera-extension/scripts/make-pkg.sh "build_camera/Release/Vertical Camera.app" \
-  obs-vertical-camera-0.1.0-macos-universal.pkg
+  build_camera/Release/VerticalAudio.driver obs-vertical-camera-0.3.0-macos-universal.pkg
+signing/brand-pkg.sh obs-vertical-camera-0.3.0-macos-universal.pkg vertical-camera <branded .pkg>
 ```
 
 ## 7. Testing and development
@@ -265,9 +281,10 @@ camera-extension/scripts/make-pkg.sh "build_camera/Release/Vertical Camera.app" 
   "OBS Virtual Camera". Keep the name stable.
 * Use a 9:16 scene/layout in LIVE Studio and select the 1080x1920 format; the camera
   offers only portrait formats, so there is no letterboxing to undo.
-* Audio does not go through a camera: in LIVE Studio use the microphone (or a loopback
-  audio device) separately. The output is video only.
-* Expected latency: one or two frames (sink queue of 2, live drop policy).
+* Audio does not go through a camera: pick the **Vertical Audio** microphone (0.3), which
+  carries the vertical mix aligned with this camera (VIRTUAL-AUDIO.md).
+* Expected latency: one or two frames (sink queue of 2, live drop policy), plus the image
+  delay of a negative audio/video offset.
 
 ## 9. Limits and open questions
 

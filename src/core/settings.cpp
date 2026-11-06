@@ -69,7 +69,7 @@ Json encodingToJson(const EncoderSettings &e)
 	return o;
 }
 
-EncoderSettings encodingFromJson(const Json &j)
+EncoderSettings encodingFromJson(const Json &j, int version)
 {
 	EncoderSettings e;
 	const Json &v = j.get("video");
@@ -83,6 +83,11 @@ EncoderSettings encodingFromJson(const Json &j)
 	e.video.bframes = v.get("bframes").asBool(e.video.bframes);
 	e.audio.bitrateKbps = a.get("bitrate").asInt(e.audio.bitrateKbps);
 	e.audio.track = a.get("track").asInt(e.audio.track);
+	/* Before 2 every output used track 1, the default: it now means the vertical mix. */
+	if (version < 2 && e.audio.track == 1)
+		e.audio.track = 0;
+	if (e.audio.track < 0 || e.audio.track > kTrackCount)
+		e.audio.track = 0;
 	if (e.video.encoder.empty())
 		e.video.encoder = "auto";
 	return e;
@@ -101,7 +106,7 @@ Json destinationToJson(const Destination &d, KeyMode keys)
 	return o;
 }
 
-Destination destinationFromJson(const Json &j, std::vector<std::string> *w)
+Destination destinationFromJson(const Json &j, std::vector<std::string> *w, int version)
 {
 	Destination d;
 	d.id = j.get("id").asString();
@@ -114,7 +119,7 @@ Destination destinationFromJson(const Json &j, std::vector<std::string> *w)
 	d.streamKey = j.get("key").asString();
 	d.enabled = j.get("enabled").asBool(true);
 	if (j.has("encoding"))
-		d.encoding = encodingFromJson(j.get("encoding"));
+		d.encoding = encodingFromJson(j.get("encoding"), version);
 	else
 		d.encoding.video.bitrateKbps = platformInfo(d.platform).recommendedKbps;
 	return d;
@@ -165,6 +170,11 @@ Json settingsToJson(const Settings &s, KeyMode keys)
 	o.set("replay", std::move(rb));
 
 	o.set("preview_visible", s.previewVisible);
+
+	Json au = Json::object();
+	au.set("track", s.audio.track);
+	au.set("excluded", s.audio.exclusions.toJson());
+	o.set("audio", std::move(au));
 	return o;
 }
 
@@ -205,7 +215,7 @@ Settings settingsFromJson(const Json &j, std::vector<std::string> *w)
 
 	std::vector<std::string> ids;
 	for (const Json &dj : j.get("destinations").items()) {
-		Destination d = destinationFromJson(dj, w);
+		Destination d = destinationFromJson(dj, w, version);
 		if (d.id.empty() || std::find(ids.begin(), ids.end(), d.id) != ids.end()) {
 			/* Missing or duplicated id: give it a new one so hotkeys and
 			 * status stay per destination. */
@@ -226,7 +236,7 @@ Settings settingsFromJson(const Json &j, std::vector<std::string> *w)
 	if (s.recording.filenameFormat.empty())
 		s.recording.filenameFormat = RecordingSettings().filenameFormat;
 	if (r.has("encoding"))
-		s.recording.encoding = encodingFromJson(r.get("encoding"));
+		s.recording.encoding = encodingFromJson(r.get("encoding"), version);
 
 	const Json &rb = j.get("replay");
 	s.replay.enabled = rb.get("enabled").asBool(false);
@@ -234,6 +244,10 @@ Settings settingsFromJson(const Json &j, std::vector<std::string> *w)
 	s.replay.maxMb = clampInt(rb.get("max_mb"), s.replay.maxMb, 16, 65536, "replay size", w);
 
 	s.previewVisible = j.get("preview_visible").asBool(true);
+
+	const Json &au = j.get("audio");
+	s.audio.track = clampInt(au.get("track"), 0, 0, kTrackCount, "vertical audio track", w);
+	s.audio.exclusions = AudioExclusions::fromJson(au.get("excluded"));
 	return s;
 }
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0 — unreleased
+
+Vertical audio.
+
+- **Vertical Audio** (macOS): a microphone that carries the vertical mix in real time, for TikTok LIVE Studio and any app. Our own audio driver (AudioServerPlugIn), installed with the camera in one package, "Vertical Camera & Audio" (administrator password; the sound stops for about a second while coreaudiod restarts). It shows in microphone lists only, never as a speaker. The plugin feeds it only while an app listens.
+- **Vertical mix**: one OBS mixer track managed by Vertical (the first free one from track 6, shown in Settings > Audio): every source on track 1 is on it unless unticked in Settings > Audio ("sent to vertical"; new sources are sent), kept up to date live. Mute and volume in the OBS mixer apply to it. Vertical's streams, recording and replay buffer encode it (destination audio track "Vertical mix" by default; settings saved by 0.2 on track 1 move to it).
+- **Audio/video offset** for the Vertical Camera + Vertical Audio pair (Settings > Audio): positive delays the audio, negative delays the image; the default comes from the measured latencies. No extra CPU: the audio is read further back in its ring, the image is held as whole frames without copy.
+- **Sync test** (Settings > Audio): a white flash and a beep at the same instant on the vertical outputs.
+- **Output meter** of the vertical mix: a thin stereo bar under the dock preview, in Studio and Compact, with the colours of the OBS mixer.
+- Self-test: groups `audio`, `vaudio`, `audioshots` (see docs/ARCHITECTURE.md); macOS driver host test in the core tests.
+- `vertical-sync-measure` (development tool): measures the audio/video offset and the latencies of the pair in a real app.
+
 ## 0.2.0 — unreleased
 
 Redesigned dock.

@@ -80,6 +80,9 @@ public:
 	int videoEncoderCount() const { return (int)video_.size(); }
 	/* A hardware video encoder exists (what "auto" picks). */
 	bool hardwareEncoderAvailable() const;
+	/* Mixer index of the audio encoder of a running output, SIZE_MAX when none. */
+	size_t audioMixerFor(const std::string &id) const;
+	static constexpr const char *recordId() { return kRecordId; }
 	/* Number of destinations streaming (Live). */
 	int liveStreamCount() const;
 	/* Encoder types and output types found at runtime (logged once). */

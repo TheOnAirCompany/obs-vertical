@@ -58,6 +58,14 @@ target_sources(
     src/core/settings.hpp
     src/core/dock-model.cpp
     src/core/dock-model.hpp
+    src/core/audio-mix.cpp
+    src/core/audio-mix.hpp
+    src/core/audio-device-ids.hpp
+    src/core/meter.cpp
+    src/core/meter.hpp
+    src/core/sync.cpp
+    src/core/sync.hpp
+    src/core/timed-ring.hpp
     src/obs/text.hpp
     src/obs/vertical.cpp
     src/obs/vertical.hpp
@@ -67,6 +75,13 @@ target_sources(
     src/obs/hotkeys.hpp
     src/obs/api.cpp
     src/obs/api.hpp
+    src/obs/audio-mix.cpp
+    src/obs/audio-mix.hpp
+    src/obs/av-sync.cpp
+    src/obs/av-sync.hpp
+    src/obs/sync-test.cpp
+    src/obs/sync-test.hpp
+    src/obs/virtualaudio.hpp
     src/ui/preview.cpp
     src/ui/preview.hpp
     src/ui/dock.cpp
@@ -76,6 +91,8 @@ target_sources(
     src/ui/dock-rows.hpp
     src/ui/dock-style.cpp
     src/ui/dock-style.hpp
+    src/ui/mix-meter.cpp
+    src/ui/mix-meter.hpp
     src/ui/settings-dialog.cpp
     src/ui/settings-dialog.hpp
     src/ui/destination-dialog.cpp
@@ -106,6 +123,14 @@ if(APPLE AND VERTICAL_VIRTUALCAM)
       "$<LINK_LIBRARY:FRAMEWORK,CoreVideo.framework>"
       "$<LINK_LIBRARY:FRAMEWORK,Foundation.framework>"
       "$<LINK_LIBRARY:FRAMEWORK,AppKit.framework>"
+  )
+endif()
+# "Vertical Audio" microphone (macOS): feeds the Vertical Audio driver (camera-extension/audio-driver).
+if(APPLE)
+  target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/virtualaudio-mac.cpp)
+  target_link_libraries(
+    ${CMAKE_PROJECT_NAME}
+    PRIVATE "$<LINK_LIBRARY:FRAMEWORK,CoreAudio.framework>" "$<LINK_LIBRARY:FRAMEWORK,CoreFoundation.framework>"
   )
 endif()
 if(APPLE)

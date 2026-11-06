@@ -88,6 +88,8 @@ void Vertical::load(obs_data_t *data)
 	core::Settings loaded = obj ? core::loadSettings(obs_data_get_json(obj), &warnings) : core::Settings();
 	for (const std::string &w : warnings)
 		obs_log(LOG_WARNING, "settings: %s", w.c_str());
+	obs_log(LOG_DEBUG, "loaded: %zu destinations, %zu audio exclusions", loaded.destinations.size(),
+		loaded.audio.exclusions.size());
 	{
 		std::lock_guard<std::mutex> lock(apiMutex_);
 		settings_ = std::move(loaded);
@@ -113,6 +115,8 @@ void Vertical::save(obs_data_t *data)
 	OBSDataAutoRelease obj = obs_data_create_from_json(text.c_str());
 	if (obj)
 		obs_data_set_obj(data, kSaveKey, obj);
+	obs_log(LOG_DEBUG, "saved: %zu destinations, %zu audio exclusions", settings_.destinations.size(),
+		settings_.audio.exclusions.size());
 }
 
 void Vertical::onCollectionChanging()

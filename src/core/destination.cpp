@@ -409,7 +409,7 @@ std::vector<Issue> validate(const Destination &d)
 		add(IssueCode::CodecNotAllowed, Severity::Error);
 
 	const AudioEncoding &a = d.encoding.audio;
-	if (a.track < 1 || a.track > 6)
+	if (a.track < 0 || a.track > 6)
 		add(IssueCode::AudioTrackInvalid, Severity::Error);
 	if (a.bitrateKbps < 32 || a.bitrateKbps > 512)
 		add(IssueCode::AudioBitrateInvalid, Severity::Error);

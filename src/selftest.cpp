@@ -26,7 +26,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *   VERTICAL_SELFTEST=1         run it 1.5 s after OBS finished loading
  *   VERTICAL_SELFTEST_QUIT=1    close OBS when done
  *   VERTICAL_SELFTEST_ONLY=a,b  only these groups: canvas, scenes, gate, record, multistream,
- *                               stream, dock (multistream needs VERTICAL_SELFTEST_RTMP_PORT)
+ *                               stream, dock, audio, vaudio, audioshots (multistream needs
+ *                               VERTICAL_SELFTEST_RTMP_PORT; audioshots VERTICAL_SELFTEST_SHOTS)
  *   VERTICAL_SELFTEST_SHOTS=dir screenshots of the dock in Studio and Compact into dir
  *                               (needs VERTICAL_SELFTEST_RTMP_PORT: two more listeners at +3, +4)
  */
@@ -36,14 +37,20 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "core/recording.hpp"
 #include "core/render-gate.hpp"
 #include "obs/api.hpp"
+#include "obs/audio-mix.hpp"
+#include "obs/av-sync.hpp"
 #include "obs/hotkeys.hpp"
 #include "obs/outputs.hpp"
+#include "obs/sync-test.hpp"
 #include "obs/text.hpp"
 #include "obs/vertical.hpp"
+#include "obs/virtualaudio.hpp"
 #include "ui/destination-dialog.hpp"
 #include "ui/dock-rows.hpp"
 #include "ui/dock-style.hpp"
 #include "ui/dock.hpp"
+#include "ui/mix-meter.hpp"
+#include "ui/settings-dialog.hpp"
 #include "ui/preview.hpp"
 
 #include <graphics/graphics.h>
@@ -56,15 +63,19 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QAbstractButton>
 #include <QAction>
 #include <QApplication>
+#include <QCheckBox>
 #include <QColor>
 #include <QDateTime>
 #include <QDir>
 #include <QDockWidget>
+#include <QFile>
 #include <QFileInfo>
 #include <QImage>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QSpinBox>
+#include <QTabWidget>
 #include <QMainWindow>
 #include <QMenu>
 #include <QMouseEvent>
@@ -1704,6 +1715,443 @@ void encoderRestore()
 	V().settingsEdited();
 }
 
+/* ------------------------------------------------------------------ audio */
+
+struct AudioState {
+	QString wavPath;
+	std::string voice; /* uuid: plays a 1 kHz tone */
+	std::string music; /* uuid: silent, used for the exclusion bits */
+	QString scene = QStringLiteral("Selftest Audio");
+	QString previousProgram;
+	QString collection;
+	bool meterHeld = false;
+	bool mainHooked = false;
+	std::atomic<uint32_t> mainPeak{0};
+	avsync::Config savedSync;
+	int track = 0;
+};
+AudioState ga;
+
+uint32_t peakBits(float f)
+{
+	uint32_t u;
+	std::memcpy(&u, &f, sizeof(u));
+	return u;
+}
+
+float bitsPeak(uint32_t u)
+{
+	float f;
+	std::memcpy(&f, &u, sizeof(f));
+	return f;
+}
+
+/* Peak of track 1 (the main mix), to check what stays in it. */
+void mainMixCb(void *, size_t, struct audio_data *data)
+{
+	if (!data || !data->frames)
+		return;
+	const float p = core::peakOf(reinterpret_cast<const float *>(data->data[0]), data->frames);
+	uint32_t cur = ga.mainPeak.load();
+	while (peakBits(p) > cur && !ga.mainPeak.compare_exchange_weak(cur, peakBits(p))) {
+	}
+}
+
+float takeMainPeak()
+{
+	return bitsPeak(ga.mainPeak.exchange(0));
+}
+
+float takeVerticalPeak()
+{
+	float l = 0.0f, r = 0.0f;
+	AudioMix::instance().takePeaks(l, r);
+	return std::max(l, r);
+}
+
+QString writeToneWav()
+{
+	const int rate = 48000, seconds = 2;
+	const int frames = rate * seconds;
+	QByteArray pcm;
+	pcm.resize(frames * 4);
+	auto *s = reinterpret_cast<int16_t *>(pcm.data());
+	for (int i = 0; i < frames; i++) {
+		const auto v = (int16_t)(0.5 * 32767.0 * std::sin(6.283185307179586 * 1000.0 * i / rate));
+		s[2 * i] = s[2 * i + 1] = v;
+	}
+	QByteArray wav;
+	const auto u32 = [&](uint32_t v) {
+		wav.append(reinterpret_cast<const char *>(&v), 4);
+	};
+	const auto u16 = [&](uint16_t v) {
+		wav.append(reinterpret_cast<const char *>(&v), 2);
+	};
+	wav.append("RIFF");
+	u32(36 + (uint32_t)pcm.size());
+	wav.append("WAVEfmt ");
+	u32(16);
+	u16(1);
+	u16(2);
+	u32(rate);
+	u32(rate * 4);
+	u16(4);
+	u16(16);
+	wav.append("data");
+	u32((uint32_t)pcm.size());
+	wav.append(pcm);
+	const QString path = QDir::temp().filePath(QStringLiteral("vertical-selftest-tone.wav"));
+	QFile f(path);
+	if (f.open(QIODevice::WriteOnly))
+		f.write(wav);
+	return path;
+}
+
+OBSSourceAutoRelease byUuid(const std::string &uuid)
+{
+	return uuid.empty() ? nullptr : obs_get_source_by_uuid(uuid.c_str());
+}
+
+uint32_t mixersOf(const std::string &uuid)
+{
+	OBSSourceAutoRelease s = byUuid(uuid);
+	return s ? obs_source_get_audio_mixers(s) : 0;
+}
+
+void audioSetup()
+{
+	ga.wavPath = writeToneWav();
+	OBSSourceAutoRelease current = obs_frontend_get_current_scene();
+	ga.previousProgram = current ? QString::fromUtf8(obs_source_get_name(current)) : QString();
+	obs_scene_t *scene = obs_scene_create(ga.scene.toUtf8().constData());
+	OBSDataAutoRelease vs = obs_data_create();
+	obs_data_set_bool(vs, "is_local_file", true);
+	obs_data_set_string(vs, "local_file", ga.wavPath.toUtf8().constData());
+	obs_data_set_bool(vs, "looping", true);
+	obs_data_set_bool(vs, "restart_on_activate", true);
+	OBSSourceAutoRelease voice = obs_source_create("ffmpeg_source", "Selftest Voice", vs, nullptr);
+	OBSSourceAutoRelease music = obs_source_create("ffmpeg_source", "Selftest Music", nullptr, nullptr);
+	obs_scene_add(scene, voice);
+	obs_scene_add(scene, music);
+	ga.voice = voice ? obs_source_get_uuid(voice) : "";
+	ga.music = music ? obs_source_get_uuid(music) : "";
+	obs_frontend_set_current_scene(obs_scene_get_source(scene));
+	obs_scene_release(scene);
+	AudioMix::instance().acquireMeter();
+	ga.meterHeld = true;
+	struct audio_convert_info conv = {};
+	conv.samples_per_sec = 48000;
+	conv.format = AUDIO_FORMAT_FLOAT_PLANAR;
+	conv.speakers = SPEAKERS_STEREO;
+	obs_add_raw_audio_callback(0, &conv, mainMixCb, nullptr);
+	ga.mainHooked = true;
+	ga.savedSync = avsync::config();
+}
+
+void audioTrackChecks()
+{
+	AudioMix &m = AudioMix::instance();
+	ga.track = m.track();
+	const uint32_t used = m.obsUsedTracks();
+	R->check(ga.track >= 1 && ga.track <= 6 && !(used & core::trackBit(ga.track)), "audio-track-free",
+		 QStringLiteral("track %1, OBS uses 0x%2").arg(ga.track).arg(used, 2, 16, QLatin1Char('0')));
+	const auto rows = m.rows();
+	const auto has = [&](const std::string &uuid) {
+		return std::any_of(rows.begin(), rows.end(),
+				   [&](const core::AudioRow &r) { return r.uuid == uuid && r.sent && r.onMainMix; });
+	};
+	R->check(has(ga.voice) && has(ga.music), "audio-sources-listed-and-sent",
+		 QStringLiteral("%1 rows").arg(rows.size()));
+	const uint32_t vb = core::trackBit(ga.track);
+	R->check((mixersOf(ga.voice) & vb) && (mixersOf(ga.music) & vb) && (mixersOf(ga.voice) & 1),
+		 "audio-new-sources-on-vertical-track",
+		 QStringLiteral("voice 0x%1 music 0x%2").arg(mixersOf(ga.voice), 0, 16).arg(mixersOf(ga.music), 0, 16));
+}
+
+void audioBitChecks()
+{
+	AudioMix &m = AudioMix::instance();
+	const uint32_t vb = core::trackBit(ga.track);
+	m.setExcluded(ga.music, true);
+	R->check(!(mixersOf(ga.music) & vb) && (mixersOf(ga.music) & 1), "audio-excluded-off-vertical-track",
+		 QStringLiteral("0x%1").arg(mixersOf(ga.music), 0, 16));
+	R->check(mixersOf(ga.voice) & vb, "audio-others-stay-on-vertical-track");
+	/* The user changes the tracks of an excluded source: the vertical bit stays off,
+	 * the other tracks are kept. */
+	OBSSourceAutoRelease music = byUuid(ga.music);
+	obs_source_set_audio_mixers(music, 0b000011u | vb);
+	R->check(mixersOf(ga.music) == 0b000011u, "audio-user-change-keeps-rule",
+		 QStringLiteral("0x%1").arg(mixersOf(ga.music), 0, 16));
+	m.setExcluded(ga.music, false);
+	R->check(mixersOf(ga.music) == (0b000011u | vb), "audio-included-back",
+		 QStringLiteral("0x%1").arg(mixersOf(ga.music), 0, 16));
+	/* Off track 1 (not in the main mix): off the vertical track too. */
+	OBSSourceAutoRelease voice = byUuid(ga.voice);
+	const uint32_t before = obs_source_get_audio_mixers(voice);
+	obs_source_set_audio_mixers(voice, 0b000010u);
+	R->check(mixersOf(ga.voice) == 0b000010u, "audio-off-main-off-vertical",
+		 QStringLiteral("0x%1").arg(mixersOf(ga.voice), 0, 16));
+	obs_source_set_audio_mixers(voice, 0b000001u);
+	R->check(mixersOf(ga.voice) == (0b000001u | vb), "audio-on-main-on-vertical",
+		 QStringLiteral("0x%1").arg(mixersOf(ga.voice), 0, 16));
+	obs_source_set_audio_mixers(voice, before | vb);
+}
+
+void drainPeaks()
+{
+	takeVerticalPeak();
+	takeMainPeak();
+}
+
+void audioLevelCheck(const char *name, bool wantVertical, int wantMain)
+{
+	const float v = takeVerticalPeak();
+	const float mainPeak = takeMainPeak();
+	bool ok = wantVertical ? v > 0.2f : v < 0.001f;
+	if (wantMain >= 0)
+		ok = ok && (wantMain ? mainPeak > 0.2f : mainPeak < 0.001f);
+	R->check(ok, name, QStringLiteral("vertical peak %1, main peak %2").arg(v, 0, 'f', 4).arg(mainPeak, 0, 'f', 4));
+}
+
+void audioMute(bool on)
+{
+	OBSSourceAutoRelease voice = byUuid(ga.voice);
+	obs_source_set_muted(voice, on);
+	drainPeaks();
+}
+
+void audioExcludeVoice(bool on)
+{
+	AudioMix::instance().setExcluded(ga.voice, on);
+	drainPeaks();
+}
+
+void audioMeterWidget()
+{
+	auto *meter = dockChild<ui::MixMeter>("verticalMixMeter");
+	R->check(meter && meter->isVisible() && meter->receivedAudio() && meter->levelDb(0) > -20.0f &&
+			 meter->levelDb(1) > -20.0f,
+		 "audio-dock-meter-gets-levels",
+		 meter ? QStringLiteral("L %1 dB, R %2 dB, height %3 px")
+				 .arg(meter->levelDb(0), 0, 'f', 1)
+				 .arg(meter->levelDb(1), 0, 'f', 1)
+				 .arg(meter->height())
+		       : QStringLiteral("no meter"));
+	auto *preview = dockChild<QWidget>("previewFrame");
+	R->check(meter && preview &&
+			 meter->mapTo(dockWidget(), QPoint(0, 0)).y() >=
+				 preview->mapTo(dockWidget(), QPoint(0, 0)).y() + preview->height() - 1,
+		 "audio-dock-meter-under-preview");
+}
+
+void audioRecordStart()
+{
+	useTempRecordFolder();
+	QString error;
+	R->check(O().startRecording(&error), "audio-record-start", error);
+}
+
+void audioRecordCheck()
+{
+	const size_t mix = O().audioMixerFor(Outputs::recordId());
+	R->check(mix == AudioMix::instance().mixIndex(), "audio-encoder-on-vertical-track",
+		 QStringLiteral("mixer %1, vertical track %2").arg(mix + 1).arg(AudioMix::instance().track()));
+	O().stopRecording();
+}
+
+uint64_t ga_flashBefore = 0;
+
+void audioSyncTestStart()
+{
+	ga_flashBefore = synctest::flashFramesDrawn();
+	const uint64_t t0 = synctest::trigger();
+	R->check(t0 > os_gettime_ns(), "sync-test-scheduled",
+		 QStringLiteral("in %1 ms").arg((int64_t)(t0 - os_gettime_ns()) / 1000000));
+	drainPeaks();
+}
+
+void audioSyncTestCheck()
+{
+	const uint64_t frames = synctest::flashFramesDrawn() - ga_flashBefore;
+	obs_video_info ovi = {};
+	obs_get_video_info(&ovi);
+	const int expected = (int)std::lround(synctest::kFlashMs / 1000.0 * ovi.fps_num / std::max(1u, ovi.fps_den));
+	R->check((int)frames >= expected - 1 && (int)frames <= expected + 1, "sync-test-flash-frames",
+		 QStringLiteral("%1 white frames (expected %2)").arg(frames).arg(expected));
+	audioLevelCheck("sync-test-beep-on-vertical-only", true, 0);
+	QFile f(QDir::temp().filePath(QStringLiteral("vertical-sync-test.json")));
+	const bool ok = f.open(QIODevice::ReadOnly) &&
+			f.readAll().contains(QByteArray::number((qulonglong)synctest::lastEventNs()));
+	R->check(ok, "sync-test-event-file", f.fileName());
+	OBSSourceAutoRelease ch1 = obs_canvas_get_channel(V().canvas(), 1);
+	R->check(!!ch1, "sync-test-flash-on-channel-1-during-test");
+	audioMute(false);
+}
+
+void audioSyncTestGone()
+{
+	OBSSourceAutoRelease ch1 = obs_canvas_get_channel(V().canvas(), 1);
+	R->check(!ch1, "sync-test-cleans-up");
+}
+
+void audioOffsetPlan()
+{
+	avsync::setConfig({false, -50});
+	obs_video_info ovi = {};
+	obs_get_video_info(&ovi);
+	const double fps = (double)ovi.fps_num / std::max(1u, ovi.fps_den);
+	const core::SyncPlan p = core::planSync(-50, fps);
+	R->check(avsync::videoDelayFrames() == p.videoDelayFrames &&
+			 std::fabs(avsync::audioDelayMs() - p.audioDelayMs) < 0.01,
+		 "sync-offset-negative-delays-image",
+		 QStringLiteral("%1 frames + audio %2 ms").arg(avsync::videoDelayFrames()).arg(avsync::audioDelayMs()));
+	avsync::setConfig({false, 40});
+	R->check(avsync::videoDelayFrames() == 0 && std::fabs(avsync::audioDelayMs() - 40.0) < 0.01,
+		 "sync-offset-positive-delays-audio");
+	avsync::setConfig({true, 0});
+	R->check(avsync::effectiveOffsetMs() == avsync::defaultOffsetMs(), "sync-offset-automatic-uses-default",
+		 QStringLiteral("%1 ms").arg(avsync::defaultOffsetMs()));
+}
+
+/* Exclusions belong to the scene collection; the offset to the machine. */
+void audioCollectionAway()
+{
+	AudioMix::instance().setExcluded(ga.music, true);
+	obs_log(LOG_INFO, "[selftest] INFO music %s excluded %d", ga.music.c_str(),
+		(int)V().settings().audio.exclusions.excluded(ga.music));
+	avsync::setConfig({false, -37});
+	char *name = obs_frontend_get_current_scene_collection();
+	ga.collection = QString::fromUtf8(name ? name : "");
+	bfree(name);
+	if (ga.mainHooked) {
+		obs_remove_raw_audio_callback(0, mainMixCb, nullptr);
+		ga.mainHooked = false;
+	}
+	/* Made by the first run; later runs switch to it. */
+	const char *other = "Selftest Audio Collection";
+	if (!obs_frontend_add_scene_collection(other))
+		obs_frontend_set_current_scene_collection(other);
+	char *now = obs_frontend_get_current_scene_collection();
+	R->check(now && std::strcmp(now, other) == 0, "audio-collection-switch-away",
+		 QString::fromUtf8(now ? now : ""));
+	bfree(now);
+}
+
+void audioCollectionOther()
+{
+	R->check(V().settings().audio.exclusions.size() == 0 && AudioMix::instance().track() >= 1,
+		 "audio-other-collection-has-its-own-exclusions",
+		 QStringLiteral("%1 exclusions, track %2")
+			 .arg(V().settings().audio.exclusions.size())
+			 .arg(AudioMix::instance().track()));
+	obs_frontend_set_current_scene_collection(ga.collection.toUtf8().constData());
+}
+
+void audioCollectionBack()
+{
+	const uint32_t vb = core::trackBit(AudioMix::instance().track());
+	R->check(V().settings().audio.exclusions.excluded(ga.music) && !(mixersOf(ga.music) & vb) &&
+			 (mixersOf(ga.voice) & vb),
+		 "audio-exclusions-survive-collection-switch",
+		 QStringLiteral("music 0x%1 voice 0x%2").arg(mixersOf(ga.music), 0, 16).arg(mixersOf(ga.voice), 0, 16));
+	const avsync::Config c = avsync::config();
+	R->check(!c.automatic && c.offsetMs == -37, "audio-offset-survives-collection-switch",
+		 QStringLiteral("%1 ms").arg(c.offsetMs));
+}
+
+void audioCleanup()
+{
+	if (ga.meterHeld) {
+		AudioMix::instance().releaseMeter();
+		ga.meterHeld = false;
+	}
+	if (ga.mainHooked) {
+		obs_remove_raw_audio_callback(0, mainMixCb, nullptr);
+		ga.mainHooked = false;
+	}
+	avsync::setConfig(ga.savedSync);
+	AudioMix::instance().setExcluded(ga.music, false);
+	AudioMix::instance().setExcluded(ga.voice, false);
+	OBSSourceAutoRelease prev = obs_get_source_by_name(ga.previousProgram.toUtf8().constData());
+	if (prev)
+		obs_frontend_set_current_scene(prev);
+	OBSSourceAutoRelease scene = obs_get_source_by_name(ga.scene.toUtf8().constData());
+	for (const std::string &u : {ga.voice, ga.music}) {
+		OBSSourceAutoRelease s = byUuid(u);
+		if (s)
+			obs_source_remove(s);
+	}
+	if (scene)
+		obs_source_remove(scene);
+	if (!ga.wavPath.isEmpty())
+		QFile::remove(ga.wavPath);
+}
+
+/* ------------------------------------------------------------------ Vertical Audio driver */
+
+void vaudioStart()
+{
+	const virtualaudio::Stats s = virtualaudio::stats();
+	if (!s.installed) {
+		R->check(!s.feeding, "vaudio-not-installed-idle",
+			 QStringLiteral("driver not installed: feed checks skipped"));
+		return;
+	}
+	virtualaudio::setForced(true);
+}
+
+void vaudioCheck()
+{
+	const virtualaudio::Stats s = virtualaudio::stats();
+	if (!s.installed)
+		return;
+	R->check(s.feeding && s.chunks > 50 && s.underruns < 5, "vaudio-feeds-the-driver",
+		 QStringLiteral("chunks %1, underruns %2, IO buffer %3 frames")
+			 .arg(s.chunks)
+			 .arg(s.underruns)
+			 .arg(s.bufferFrames));
+	obs_log(LOG_INFO, "[selftest] PERF vaudio schedule_ms=%.1f audio_delay_ms=%.1f path_ms=%.1f underruns=%llu",
+		s.scheduleMs, s.audioDelayMs, s.scheduleMs + core::framesToMs(core::kLoopbackFrames),
+		(unsigned long long)s.underruns);
+	virtualaudio::setForced(false);
+}
+
+/* ------------------------------------------------------------------ 0.3 screenshots */
+
+void saveWidgetShot(QWidget *w, const char *file)
+{
+	const char *dir = getenv("VERTICAL_SELFTEST_SHOTS");
+	if (!dir || !w)
+		return;
+	QDir().mkpath(QString::fromUtf8(dir));
+	const QString path = QDir(QString::fromUtf8(dir)).filePath(QString::fromUtf8(file));
+	const bool ok = w->grab().save(path);
+	R->check(ok, "screenshot", path);
+}
+
+QPointer<ui::SettingsDialog> g_settingsShot;
+
+void settingsShot()
+{
+	g_settingsShot = new ui::SettingsDialog(static_cast<QWidget *>(obs_frontend_get_main_window()),
+						ui::SettingsDialog::Tab::Audio);
+	g_settingsShot->setAttribute(Qt::WA_DeleteOnClose);
+	g_settingsShot->show();
+}
+
+void settingsShotSave()
+{
+	if (!g_settingsShot)
+		return;
+	auto *list = g_settingsShot->findChild<QWidget *>(QStringLiteral("verticalAudioSources"));
+	auto *track = g_settingsShot->findChild<QLabel *>(QStringLiteral("verticalAudioTrack"));
+	R->check(list && list->findChildren<QCheckBox *>().size() >= 2 && track &&
+			 track->text().contains(QString::number(AudioMix::instance().track())),
+		 "settings-audio-tab", track ? track->text() : QString());
+	saveWidgetShot(g_settingsShot, "settings-audio.png");
+	g_settingsShot->reject();
+}
+
 bool enabled(const char *group)
 {
 	const char *only = getenv("VERTICAL_SELFTEST_ONLY");
@@ -1913,6 +2361,59 @@ void runSelfTest()
 		});
 		R->add(200, [] { dockRowsRemove(); });
 		R->add(300, [] { dockCleanup(); });
+	}
+	if (enabled("vaudio")) {
+		R->add(200, [] { vaudioStart(); });
+		R->add(3000, [] { vaudioCheck(); });
+	}
+	if (enabled("audio")) {
+		R->add(200, [] { audioSetup(); });
+		R->add(800, [] { audioTrackChecks(); });
+		R->add(100, [] { audioBitChecks(); });
+		R->add(200, [] { drainPeaks(); });
+		R->add(1500, [] { audioLevelCheck("audio-vertical-mix-has-sound", true, 1); });
+		R->add(0, [] { audioMute(true); });
+		R->add(600, [] { drainPeaks(); });
+		R->add(800, [] { audioLevelCheck("audio-muted-in-main-silent-in-vertical", false, 0); });
+		R->add(0, [] { audioMute(false); });
+		R->add(0, [] { audioExcludeVoice(true); });
+		R->add(600, [] { drainPeaks(); });
+		R->add(800, [] { audioLevelCheck("audio-excluded-silent-in-vertical-kept-in-main", false, 1); });
+		R->add(0, [] { audioExcludeVoice(false); });
+		R->add(0, [] { dockFloat(700, 820); });
+		R->add(1500, [] { audioMeterWidget(); });
+		R->add(0, [] { dockRestore(); });
+		R->add(200, [] { audioRecordStart(); });
+		R->waitUntil("audio-record-live", 5000,
+			     [] { return O().recordingStatus().state == OutputState::Live; });
+		R->add(500, [] { audioRecordCheck(); });
+		R->waitUntil("audio-record-stopped", 15000, [] { return !O().recordingActive(); });
+		R->add(0, [] { audioMute(true); }); /* only the beep on the tracks */
+		R->add(1200, [] { audioSyncTestStart(); });
+		R->add(synctest::kLeadMs + synctest::kFlashMs + 400, [] { audioSyncTestCheck(); });
+		R->add(1500, [] { audioSyncTestGone(); });
+		R->add(100, [] { audioOffsetPlan(); });
+		R->add(200, [] { audioCollectionAway(); });
+		R->add(4000, [] { audioCollectionOther(); });
+		R->add(5000, [] { audioCollectionBack(); });
+		R->add(200, [] { audioCleanup(); });
+	}
+	if (getenv("VERTICAL_SELFTEST_SHOTS") && enabled("audioshots")) {
+		R->add(200, [] { audioSetup(); });
+		R->add(300, [] { dockFloat(700, 820); });
+		R->add(1500, [] { saveShot("studio-meter.png"); });
+		R->add(0, [] { dockFloat(320, 820); });
+		R->waitUntil("audioshots-compact", 3000, [] {
+			ui::Dock *d = dockWidget();
+			return d && d->mode() == core::DockMode::Compact;
+		});
+		R->add(1500, [] { saveShot("compact-meter.png"); });
+		R->add(0, [] { settingsShot(); });
+		R->add(1200, [] { settingsShotSave(); });
+		R->add(300, [] {
+			dockRestore();
+			audioCleanup();
+		});
 	}
 	if (getenv("VERTICAL_SELFTEST_SHOTS") && getenv("VERTICAL_SELFTEST_RTMP_PORT")) {
 		R->add(300, [] { shotsSetup(); });

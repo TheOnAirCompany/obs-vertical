@@ -517,11 +517,13 @@ void PreviewFrame::place()
 {
 	if (collapsed_) {
 		expandBar_->setGeometry(0, 0, width(), tokens::kCollapsedBar);
+		emit pictureRectChanged();
 		return;
 	}
 	const QRect r = fitRect();
 	if (r.isValid())
 		preview_->setGeometry(r);
+	emit pictureRectChanged();
 }
 
 void PreviewFrame::resizeEvent(QResizeEvent *e)

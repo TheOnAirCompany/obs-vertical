@@ -1,6 +1,8 @@
 #include "obs/outputs.hpp"
 
 #include "core/dock-model.hpp"
+#include "obs/audio-mix.hpp"
+#include "obs/av-sync.hpp"
 #include "obs/text.hpp"
 #include "obs/vertical.hpp"
 #ifdef VERTICAL_VIRTUALCAM
@@ -165,7 +167,9 @@ obs_encoder_t *Outputs::acquireAudio(const core::EncoderSettings &s, QString *er
 	OBSDataAutoRelease settings = obs_data_create();
 	obs_data_set_int(settings, "bitrate", s.audio.bitrateKbps);
 	const std::string name = "Vertical audio " + std::to_string(audio_.size() + 1);
-	const size_t mixer = (size_t)std::clamp(s.audio.track, 1, 6) - 1;
+	/* Track 0: the vertical mix, with the user's exclusions (the track Vertical manages). */
+	const size_t mixer = s.audio.track == 0 ? AudioMix::instance().mixIndex()
+						: (size_t)std::clamp(s.audio.track, 1, core::kTrackCount) - 1;
 	obs_encoder_t *enc = obs_audio_encoder_create(id.c_str(), name.c_str(), settings, mixer, nullptr);
 	if (!enc) {
 		if (error)
@@ -173,6 +177,7 @@ obs_encoder_t *Outputs::acquireAudio(const core::EncoderSettings &s, QString *er
 		return nullptr;
 	}
 	obs_encoder_set_audio(enc, obs_get_audio());
+	obs_log(LOG_INFO, "audio encoder '%s' (%d kbps) on track %zu", id.c_str(), s.audio.bitrateKbps, mixer + 1);
 	audio_.push_back({key, enc, 1, id, false});
 	return enc;
 }
@@ -646,8 +651,16 @@ bool Outputs::hardwareEncoderAvailable() const
 	return core::chooseVideoEncoder(videoEncoders(), core::VideoEncoding()).hardware;
 }
 
+size_t Outputs::audioMixerFor(const std::string &id) const
+{
+	const Running *r = find(id);
+	obs_encoder_t *enc = r ? obs_output_get_audio_encoder(r->output, 0) : nullptr;
+	return enc ? obs_encoder_get_mixer_index(enc) : SIZE_MAX;
+}
+
 void Outputs::tick()
 {
+	avsync::update();
 	const uint64_t now = os_gettime_ns();
 	for (auto &[id, r] : running_) {
 		if (r.status.state != OutputState::Live && r.status.state != OutputState::Reconnecting)

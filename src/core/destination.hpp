@@ -66,7 +66,7 @@ struct VideoEncoding {
 
 struct AudioEncoding {
 	int bitrateKbps = 160;
-	int track = 1; /* 1..6, the OBS audio mixer track */
+	int track = 0; /* 0 = the vertical mix (the track Vertical manages), 1..6 = that OBS mixer track */
 
 	bool operator==(const AudioEncoding &o) const { return bitrateKbps == o.bitrateKbps && track == o.track; }
 	bool operator!=(const AudioEncoding &o) const { return !(*this == o); }
