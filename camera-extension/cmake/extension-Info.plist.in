@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>@VERTICAL_CAMERA_EXT_ID@</string>
+	<key>CFBundleIdentifier</key>
+	<string>@VERTICAL_CAMERA_EXT_ID@</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Vertical Camera</string>
+	<key>CFBundleDisplayName</key>
+	<string>Vertical Camera</string>
+	<key>CFBundlePackageType</key>
+	<string>SYSX</string>
+	<key>CFBundleShortVersionString</key>
+	<string>@VERTICAL_CAMERA_VERSION@</string>
+	<key>CFBundleVersion</key>
+	<string>@VERTICAL_CAMERA_BUILD@</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>(c) 2026 The OnAir Company. GPL-2.0-or-later.</string>
+	<key>NSSystemExtensionUsageDescription</key>
+	<string>Adds the 9:16 "Vertical Camera" fed by the Vertical for OBS plugin.</string>
+	<key>CMIOExtension</key>
+	<dict>
+		<!-- Must start with an application group of the extension (team-prefixed). -->
+		<key>CMIOExtensionMachServiceName</key>
+		<string>@VERTICAL_TEAM_ID@.@VERTICAL_CAMERA_EXT_ID@</string>
+	</dict>
+	<key>VerticalCameraDeviceUUID</key>
+	<string>@VERTICAL_CAMERA_DEVICE_UUID@</string>
+	<key>VerticalCameraSourceUUID</key>
+	<string>@VERTICAL_CAMERA_SOURCE_UUID@</string>
+	<key>VerticalCameraSinkUUID</key>
+	<string>@VERTICAL_CAMERA_SINK_UUID@</string>
+</dict>
+</plist>

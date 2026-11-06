@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Camera extensions must be sandboxed. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.application-identifier</key>
+	<string>@VERTICAL_TEAM_ID@.@VERTICAL_CAMERA_EXT_ID@</string>
+	<key>com.apple.developer.team-identifier</key>
+	<string>@VERTICAL_TEAM_ID@</string>
+	<!-- The Mach service name in Info.plist (CMIOExtensionMachServiceName) must be
+	     prefixed by one of these groups. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>@VERTICAL_TEAM_ID@.@VERTICAL_CAMERA_APP_ID@</string>
+	</array>
+</dict>
+</plist>

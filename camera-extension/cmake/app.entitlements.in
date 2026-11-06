@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Allows this app to activate the system extension it embeds. Needs a
+	     Developer ID provisioning profile with the System Extension capability. -->
+	<key>com.apple.developer.system-extension.install</key>
+	<true/>
+	<key>com.apple.application-identifier</key>
+	<string>@VERTICAL_TEAM_ID@.@VERTICAL_CAMERA_APP_ID@</string>
+	<key>com.apple.developer.team-identifier</key>
+	<string>@VERTICAL_TEAM_ID@</string>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>@VERTICAL_TEAM_ID@.@VERTICAL_CAMERA_APP_ID@</string>
+	</array>
+</dict>
+</plist>
