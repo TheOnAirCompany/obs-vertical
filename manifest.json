@@ -1,0 +1,18 @@
+{
+    "display_name": "Vertical for OBS",
+    "id": "8e27ff3e-3dfe-4d25-9a9c-c08023c06a84",
+    "version": "0.1.0",
+    "authors": [
+        "The OnAir Company"
+    ],
+    "name": "obs-vertical",
+    "description": "A vertical (9:16) output for OBS: own canvas and scenes, multi-destination streaming with shared hardware encoders, recording, replay buffer and a 9:16 virtual camera.",
+    "long_description": "Vertical for OBS adds a portrait canvas with its own scenes next to the main one, a Vertical dock with a live preview, linked scenes, and outputs: several streaming destinations at once (TikTok, YouTube, Instagram, Facebook, RTMP, SRT) sharing hardware encoders, a recording, a replay buffer and a 9:16 virtual camera on macOS. The vertical scene is rendered only while something needs it.",
+    "urls": {
+        "repository": "https://github.com/TheOnAirCompany/obs-vertical",
+        "website": "https://github.com/TheOnAirCompany/obs-vertical",
+        "support": "https://github.com/TheOnAirCompany/obs-vertical/issues"
+    },
+    "has_banner": false,
+    "has_icon": false
+}
