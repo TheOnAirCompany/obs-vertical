@@ -32,12 +32,6 @@ constexpr QRgb kStopBorder = 0xFF6B2E33;
 constexpr QRgb kBigStop = 0xFFD93A40; /* "Stop Recording" */
 constexpr QRgb kRecHalo = 0x2EE5484D; /* rgba(229,72,77,.18) behind the record dot */
 constexpr QRgb kBetaText = 0xFF1B1300;
-constexpr QRgb kChipOkText = 0xFF6FDC9C; /* encoder chip, hardware */
-constexpr QRgb kChipOkFill = 0x2430A46C;
-constexpr QRgb kChipOkBorder = 0x7330A46C;
-constexpr QRgb kChipWarnText = 0xFFE3A748;   /* provisional: encoder chip, software */
-constexpr QRgb kChipWarnFill = 0x24E3A748;   /* provisional */
-constexpr QRgb kChipWarnBorder = 0x73E3A748; /* provisional */
 constexpr QRgb kPreviewTagFill = 0x73000000; /* "9:16" tag: rgba(0,0,0,.45) */
 
 /* ---- sizes (logical px, from the review page) ---- */
@@ -149,6 +143,7 @@ class PlatformTile : public QWidget {
 public:
 	PlatformTile(core::Platform platform, int size, int radius, QWidget *parent = nullptr);
 	void setPlatform(core::Platform platform);
+	core::Platform platform() const { return platform_; }
 
 protected:
 	void paintEvent(QPaintEvent *) override;
@@ -162,7 +157,7 @@ private:
 QImage badgeImage(const QString &text, const QColor &fill, const QColor &textColor, const QFont &font, qreal dpr,
 		  bool dot = false, int radius = 3);
 
-/* Pill-shaped chip with text (encoder chip, canvas chip). */
+/* Pill-shaped chip with text (canvas chip). */
 class Chip : public QWidget {
 	Q_OBJECT
 

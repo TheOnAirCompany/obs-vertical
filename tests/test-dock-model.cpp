@@ -185,16 +185,61 @@ TEST("dock: platform tiles")
 		CHECK(tileStyle(p).stops >= 1 && tileStyle(p).stops <= 3);
 }
 
-TEST("dock: encoder family")
+TEST("dock: platform from the server URL")
 {
-	CHECK_EQ(encoderFamily("com.apple.videotoolbox.videoencoder.ave.avc"), std::string("VideoToolbox"));
-	CHECK_EQ(encoderFamily("jim_nvenc"), std::string("NVENC"));
-	CHECK_EQ(encoderFamily("obs_nvenc_h264_tex"), std::string("NVENC"));
-	CHECK_EQ(encoderFamily("h264_texture_amf"), std::string("AMF"));
-	CHECK_EQ(encoderFamily("obs_qsv11_v2"), std::string("Quick Sync"));
-	CHECK_EQ(encoderFamily("ffmpeg_vaapi_tex"), std::string("VA-API"));
-	CHECK_EQ(encoderFamily("obs_x264"), std::string("x264"));
-	CHECK_EQ(encoderFamily("something_else"), std::string("something_else"));
+	CHECK(platformFromServer("rtmp://push.tiktokcdn.com/game/") == Platform::TikTok);
+	CHECK(platformFromServer("rtmp://push-rtmp-l11-va01.tiktokcdn.com/game/") == Platform::TikTok);
+	CHECK(platformFromServer("rtmps://push-rtmp-l3-fra01.tiktokcdn-eu.com:443/game") == Platform::TikTok);
+	CHECK(platformFromServer("rtmp://a.rtmp.youtube.com/live2") == Platform::YouTube);
+	CHECK(platformFromServer("rtmps://a.rtmps.youtube.com:443/live2") == Platform::YouTube);
+	CHECK(platformFromServer("rtmps://edgetee-upload-cdg4-2.xx.fbcdn.net:443/rtmp/") == Platform::Instagram);
+	CHECK(platformFromServer("rtmps://edgetee-upload-mxp1-1.instagram.com:443/rtmp/") == Platform::Instagram);
+	CHECK(platformFromServer("rtmps://live-upload.instagram.com:443/rtmp/") == Platform::Instagram);
+	CHECK(platformFromServer("rtmps://live-api-s.facebook.com:443/rtmp/") == Platform::Facebook);
+	CHECK(platformFromServer("  RTMPS://Live-API-S.Facebook.com:443/rtmp/  ") == Platform::Facebook);
+	CHECK(platformFromServer("srt://192.168.1.20:9000?streamid=live") == Platform::CustomSrt);
+	CHECK(platformFromServer("push.tiktokcdn.com/game") == Platform::TikTok); /* no scheme */
+	CHECK(!platformFromServer("rtmp://live.example.com/app"));
+	CHECK(!platformFromServer("rtmp://127.0.0.1:1935/live"));
+	CHECK(!platformFromServer("rtmp://notyoutube.example.com/live")); /* a label, not the domain */
+	CHECK(!platformFromServer("rtmp://tiktok.example.com/live"));
+	CHECK(!platformFromServer(""));
+}
+
+TEST("dock: tile of a destination, by platform field and by server URL")
+{
+	/* By the platform field: blank servers (TikTok and Instagram have no default one). */
+	for (Platform p : allPlatforms())
+		CHECK(tilePlatform(makeDestination(p, "id", "name")) == p);
+	CHECK(tileStyle(tilePlatform(makeDestination(Platform::TikTok, "id", "TikTok"))).glyph == TileGlyph::Note);
+	CHECK(tileStyle(tilePlatform(makeDestination(Platform::Instagram, "id", "Insta"))).glyph == TileGlyph::Camera);
+
+	/* By the server URL: a TikTok server never shows the Instagram tile. */
+	Destination d = makeDestination(Platform::Instagram, "id", "TikTok");
+	d.server = "rtmp://push.tiktokcdn.com/game/";
+	CHECK(tilePlatform(d) == Platform::TikTok);
+	CHECK(tileStyle(tilePlatform(d)).glyph == TileGlyph::Note);
+	d.platform = Platform::CustomRtmp;
+	CHECK(tilePlatform(d) == Platform::TikTok);
+	d.server = "rtmps://live-api-s.facebook.com:443/rtmp/";
+	CHECK(tilePlatform(d) == Platform::Facebook);
+	d.server = "rtmps://edgetee-upload-cdg4-2.xx.fbcdn.net:443/rtmp/";
+	CHECK(tilePlatform(d) == Platform::Instagram);
+	d.server = "rtmp://a.rtmp.youtube.com/live2";
+	CHECK(tilePlatform(d) == Platform::YouTube);
+
+	/* Custom servers keep the platform field; srt:// turns custom RTMP into SRT only. */
+	d.server = "rtmp://live.example.com/app";
+	CHECK(tilePlatform(d) == Platform::CustomRtmp);
+	d.platform = Platform::TikTok;
+	CHECK(tilePlatform(d) == Platform::TikTok);
+	d.server = "srt://203.0.113.5:9000";
+	CHECK(tilePlatform(d) == Platform::TikTok);
+	d.platform = Platform::CustomRtmp;
+	CHECK(tilePlatform(d) == Platform::CustomSrt);
+	d.platform = Platform::CustomSrt;
+	CHECK(tilePlatform(d) == Platform::CustomSrt);
+	CHECK(tileStyle(tilePlatform(d)).glyph == TileGlyph::Srt);
 }
 
 TEST("dock: virtual camera state")

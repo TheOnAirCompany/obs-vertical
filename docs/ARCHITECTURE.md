@@ -18,7 +18,7 @@ src/core/   pure C++17, no OBS, no Qt          unit-tested (tests/)
   recording       recording formats -> OBS output types (hybrid MP4/MOV, MKV, ...)
   settings        everything saved with a scene collection, JSON (de)serialization
   dock-model      dock logic: Studio/Compact by width, status lines, bitrate, link menu,
-                  platform tiles, encoder chip, virtual camera state
+                  platform tiles (platform from the server URL), virtual camera state
 
 src/obs/    libobs + frontend API, UI thread unless noted
   vertical        the canvas, its scenes, linked scenes, persistence, render gate
@@ -77,8 +77,8 @@ The vertical output must not double the cost of the main output. Five decisions:
    (`com.apple.videotoolbox.videoencoder.ave.avc` / `.ave.hevc` on Apple silicon,
    `.gva` on Intel Macs), other hardware encoders (NVENC, AMF, QSV, VA-API on other
    systems), then hardware H.264 when HEVC was asked but only H.264 has hardware, and
-   **x264 only when no hardware encoder exists** (logged as a warning, shown in the
-   dock). Audio uses CoreAudio AAC on macOS, then FFmpeg AAC.
+   **x264 only when no hardware encoder exists** (logged as a warning, marked "(CPU)"
+   in the encoder list of the destination dialog). Audio uses CoreAudio AAC on macOS, then FFmpeg AAC.
 
 2. **One encoder per distinct setting, not per output.** The encoder pool is keyed by
    the canonical text of the settings (`EncoderSettings::videoKey()` /
@@ -200,7 +200,7 @@ VERTICAL_SELFTEST=1 VERTICAL_SELFTEST_QUIT=1 /Applications/OBS.app/Contents/MacO
 | `gate` | With the dock preview hidden and no output, channel 0 is empty; a recording puts the current scene on it; it is empty again after the stop. |
 | `record` | 3 s recording of a moving noise image into `$TMPDIR/vertical-selftest`; logs the encoder actually used and checks it is the plugin's choice (hardware when available); the file exists and is over 50 KB. Then recording + replay buffer together share one video encoder and one audio encoder. |
 | `stream` | A destination to `rtmp://127.0.0.1:1/live` (key `test`) reports an error or reconnect state within 8 s, and its dock row shows it (dot, text, ▶ / ■); it stops and is removed. |
-| `dock` | The dock floated and resized: Studio at 700 px (header chip, preview, scenes section, Start all / Stop all, destinations, tabs, footer, 32 px rows), still Studio just under the threshold (hysteresis), Compact at 320 px (no section headers, three lines, 28 px rows); forced layout from the ⋯ menu choice; a click on a scene row puts it on program; the link icon of a row opens the link menu, which links then unlinks a 16:9 scene; Start / Stop Recording in the Recording tab (timer, Compact line); preview collapse and detached preview window. |
+| `dock` | The dock floated and resized: Studio at 700 px (header chip, preview, scenes section, Start all / Stop all, destinations, tabs, footer, 32 px rows), still Studio just under the threshold (hysteresis), Compact at 320 px (no section headers, three lines, 28 px rows); forced layout from the ⋯ menu choice; a click on a scene row puts it on program; the link icon of a row opens the link menu, which links then unlinks a 16:9 scene; Start / Stop Recording in the Recording tab (timer, Compact line); preview collapse and detached preview window; no encoder chip in the footer; destination rows in Studio and Compact: tile from the platform or the server (a row saved as Instagram with a TikTok server shows TikTok, srt:// shows SRT), a 28 px settings button before ▶ / ■ with the "Settings" and "Go live on …" tooltips, the settings button opens the destination dialog, every platform survives the dialog, a TikTok server selects TikTok, and + Add destination > TikTok saves a TikTok destination with the TikTok tile. |
 
 The log (`~/Library/Application Support/obs-studio/logs`) gets one line per check,
 `[selftest] PASS|FAIL <name> <detail>`, a CPU sample taken during the recording,
@@ -240,10 +240,13 @@ destinations, three lines) below, with a 16 px hysteresis. The ⋯ menu can forc
   moves its link).
 * Destinations: platform tile (colours and glyphs drawn in code), status line from the
   output signals ("Live · 00:12:34 · 6.0 Mbps", "Connecting…", "Reconnecting 2/25…",
-  "Error: …", "Stopped"), ▶ / ■ and ⋯ (Edit, Duplicate, Delete). Bitrate: delta of
-  `obs_output_get_total_bytes` over the last second; uptime from the `start` signal.
-* Status bar: encoder chip (family and hardware/software), outputs live, process CPU
-  (`os_cpu_usage_info`), version and settings.
+  "Error: …", "Stopped"), settings (opens the destination dialog), ▶ "Go live on …" /
+  ■ "Stop" and ⋯ (Edit, Duplicate, Delete). The tile shows the platform the server
+  points to (`core::tilePlatform`: TikTok, YouTube, Instagram, Facebook hosts, srt://),
+  else the saved platform; the dialog selects that platform when the server is typed.
+  Bitrate: delta of `obs_output_get_total_bytes` over the last second; uptime from the
+  `start` signal.
+* Status bar: outputs live, process CPU (`os_cpu_usage_info`), version and settings.
 
 Colours follow the OBS theme palette; status colours are fixed (red `#E5484D` live or
 error, amber `#E3A748` connecting or waiting, green `#30A46C` ready, grey stopped).

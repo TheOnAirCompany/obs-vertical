@@ -319,6 +319,12 @@ DestinationRow::DestinationRow(const std::string &id, core::Platform platform, c
 		setMinimumHeight(tokens::kRowStudio);
 	}
 
+	/* Settings before ▶ / ■: opens the same dialog as Edit in the ⋯ menu. */
+	settings_ = iconButton("gear", T("Dock.DestinationSettings"), tokens::kButton, false, this);
+	settings_->setObjectName(QStringLiteral("settings"));
+	h->addWidget(settings_);
+	connect(settings_, &QToolButton::clicked, this, [this] { emit editRequested(id_); });
+
 	toggle_ = new QToolButton(this);
 	toggle_->setObjectName(QStringLiteral("toggle"));
 	h->addWidget(toggle_);
@@ -339,9 +345,9 @@ void DestinationRow::setStatus(const core::StatusView &st, bool enabled)
 	dot_->setTone(st.tone, st.ring);
 	toggle_->setEnabled(enabled || st.running);
 	styleStartStop(toggle_, st.running);
-	const QString tip = (st.running ? T("Dock.Stop") : T("Dock.Start")) + QStringLiteral(" · ") + name_->fullText();
-	toggle_->setToolTip(tip);
-	toggle_->setAccessibleName(tip);
+	toggle_->setToolTip(st.running ? T("Dock.Stop") : T("Dock.GoLive").arg(name_->fullText()));
+	toggle_->setAccessibleName(st.running ? T("Dock.Stop") + QStringLiteral(" · ") + name_->fullText()
+					      : toggle_->toolTip());
 	const QString text = QString::fromStdString(st.text);
 	statusText_ = text;
 	if (status_) {
@@ -373,6 +379,16 @@ void DestinationRow::paintEvent(QPaintEvent *)
 		return;
 	QPainter p(this);
 	p.fillRect(QRect(0, 0, width(), 1), surfaces(this).line);
+}
+
+void DestinationRow::changeEvent(QEvent *e)
+{
+	QWidget::changeEvent(e);
+	if (e->type() != QEvent::ApplicationPaletteChange)
+		return;
+	restyleIconButton(settings_, "gear", false);
+	if (more_)
+		restyleIconButton(more_, "more", true);
 }
 
 void DestinationRow::contextMenuEvent(QContextMenuEvent *e)

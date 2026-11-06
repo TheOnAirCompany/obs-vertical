@@ -32,17 +32,6 @@ struct OutputStatus {
 	int attempt = 0; /* reconnect attempt (1-based) while Reconnecting */
 };
 
-/* Encoder shown in the dock footer: the shared video encoder in use, else the one
- * the next output will use. */
-struct EncoderChip {
-	QString family; /* "VideoToolbox" */
-	bool hardware = false;
-	bool active = false; /* an output uses it now */
-	int encoders = 0;    /* video encoders running */
-	int outputs = 0;     /* outputs sharing them */
-	bool none = false;   /* no usable video encoder */
-};
-
 class Outputs : public QObject {
 	Q_OBJECT
 
@@ -86,7 +75,6 @@ public:
 
 	/* "Apple VT H264 Hardware Encoder · 2 video encoders for 3 outputs". */
 	QString encoderSummary() const;
-	EncoderChip encoderChip() const;
 	/* Number of destinations streaming (Live). */
 	int liveStreamCount() const;
 	/* Encoder types and output types found at runtime (logged once). */

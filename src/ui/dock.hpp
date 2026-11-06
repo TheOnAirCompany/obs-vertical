@@ -180,16 +180,11 @@ private:
 	QToolButton *vcamLineButton_ = nullptr;
 
 	/* footer */
-	QLabel *encoderLabel_ = nullptr;
-	Chip *encoderChip_ = nullptr;
 	QLabel *outputsLive_ = nullptr;
 	QLabel *cpu_ = nullptr;
 	QLabel *version_ = nullptr;
 	QToolButton *gear_ = nullptr;
 	QWidget *footerSecond_ = nullptr;
-	QWidget *footerWrap_ = nullptr;
-	QBoxLayout *footerWrapLayout_ = nullptr;
-	QBoxLayout *footerRowLayout_ = nullptr;
 
 	QTimer clock_;
 	os_cpu_usage_info_t *cpuInfo_ = nullptr;

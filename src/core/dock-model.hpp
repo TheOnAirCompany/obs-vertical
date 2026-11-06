@@ -1,8 +1,8 @@
 #pragma once
 
 /* Logic behind the Vertical dock (0.2): layout mode by width, status lines of
- * the outputs, bitrate, canvas chip, link menu, platform tiles, encoder chip and
- * virtual camera state. Pure C++17 (no OBS, no Qt): unit-tested in
+ * the outputs, bitrate, canvas chip, link menu, platform tiles and virtual
+ * camera state. Pure C++17 (no OBS, no Qt): unit-tested in
  * tests/test-dock-model.cpp. The texts come translated from the caller. */
 
 #include "destination.hpp"
@@ -128,12 +128,10 @@ struct TileStyle {
 	bool themed = false; /* custom servers: colours from the OBS theme instead */
 };
 TileStyle tileStyle(Platform p);
-
-/* ------------------------------------------------------------------ encoder chip */
-
-/* Short family name of an encoder id: "VideoToolbox", "NVENC", "AMF", "Quick Sync",
- * "VA-API", "x264", ... or the id itself. */
-std::string encoderFamily(const std::string &encoderId);
+/* Platform whose tile a destination shows: the platform its server points to
+ * (platformFromServer) when the server names one, else its platform field. An
+ * srt:// server turns only a custom RTMP destination into SRT. */
+Platform tilePlatform(const Destination &d);
 
 /* ------------------------------------------------------------------ virtual camera */
 

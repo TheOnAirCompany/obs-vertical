@@ -625,28 +625,6 @@ QString Outputs::encoderSummary() const
 		.arg(users);
 }
 
-EncoderChip Outputs::encoderChip() const
-{
-	EncoderChip c;
-	if (video_.empty()) {
-		const core::EncoderChoice choice = core::chooseVideoEncoder(videoEncoders(), core::VideoEncoding());
-		if (choice.id.empty()) {
-			c.none = true;
-			return c;
-		}
-		c.family = QString::fromStdString(core::encoderFamily(choice.id));
-		c.hardware = choice.hardware;
-		return c;
-	}
-	c.active = true;
-	c.family = QString::fromStdString(core::encoderFamily(video_.front().id));
-	c.hardware = video_.front().hardware;
-	c.encoders = (int)video_.size();
-	for (const PooledEncoder &p : video_)
-		c.outputs += p.users;
-	return c;
-}
-
 int Outputs::liveStreamCount() const
 {
 	int n = 0;

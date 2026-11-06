@@ -1,5 +1,6 @@
 #include "ui/destination-dialog.hpp"
 
+#include "core/dock-model.hpp"
 #include "obs/outputs.hpp"
 #include "obs/text.hpp"
 
@@ -109,12 +110,27 @@ DestinationDialog::DestinationDialog(const core::Destination &d, QWidget *parent
 	layout->addWidget(buttons);
 
 	connect(platform_, &QComboBox::currentIndexChanged, this, &DestinationDialog::onPlatformChanged);
+	connect(server_, &QLineEdit::textChanged, this, &DestinationDialog::onServerChanged);
 	for (QLineEdit *e : {name_, server_, key_})
 		connect(e, &QLineEdit::textChanged, this, &DestinationDialog::validateNow);
 	for (QSpinBox *s : {videoKbps_, keyint_, audioKbps_, track_})
 		connect(s, &QSpinBox::valueChanged, this, &DestinationDialog::validateNow);
 	connect(codec_, &QComboBox::currentIndexChanged, this, &DestinationDialog::validateNow);
+	onServerChanged();
 	validateNow();
+}
+
+/* A server that names its platform (a TikTok, YouTube, Instagram or Facebook
+ * server, or srt:// for a custom server) selects that platform, so the platform
+ * saved, and the tile of the dock, match the server. */
+void DestinationDialog::onServerChanged()
+{
+	core::Destination probe;
+	probe.platform = core::platformFromId(platform_->currentData().toString().toStdString());
+	probe.server = server_->text().toStdString();
+	const core::Platform want = core::tilePlatform(probe);
+	if (want != probe.platform)
+		platform_->setCurrentIndex(platform_->findData(QString::fromUtf8(core::platformId(want))));
 }
 
 void DestinationDialog::onPlatformChanged()

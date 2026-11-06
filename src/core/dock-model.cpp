@@ -250,30 +250,14 @@ TileStyle tileStyle(Platform p)
 	return s;
 }
 
-/* ------------------------------------------------------------------ encoder chip */
-
-std::string encoderFamily(const std::string &id)
+Platform tilePlatform(const Destination &d)
 {
-	const auto has = [&](const char *part) {
-		return id.find(part) != std::string::npos;
-	};
-	if (has("videotoolbox"))
-		return "VideoToolbox";
-	if (has("nvenc"))
-		return "NVENC";
-	if (has("amf") || has("amd"))
-		return "AMF";
-	if (has("qsv"))
-		return "Quick Sync";
-	if (has("vaapi"))
-		return "VA-API";
-	if (has("x264"))
-		return "x264";
-	if (has("svt_av1") || has("svt-av1"))
-		return "SVT-AV1";
-	if (has("aom"))
-		return "AOM AV1";
-	return id;
+	const std::optional<Platform> fromServer = platformFromServer(d.server);
+	if (!fromServer)
+		return d.platform;
+	if (*fromServer == Platform::CustomSrt)
+		return d.platform == Platform::CustomRtmp ? Platform::CustomSrt : d.platform;
+	return *fromServer;
 }
 
 /* ------------------------------------------------------------------ virtual camera */

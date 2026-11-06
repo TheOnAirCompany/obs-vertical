@@ -40,6 +40,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/outputs.hpp"
 #include "obs/text.hpp"
 #include "obs/vertical.hpp"
+#include "ui/destination-dialog.hpp"
 #include "ui/dock-rows.hpp"
 #include "ui/dock-style.hpp"
 #include "ui/dock.hpp"
@@ -53,6 +54,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <util/platform.h>
 
 #include <QAbstractButton>
+#include <QAction>
 #include <QApplication>
 #include <QColor>
 #include <QDateTime>
@@ -61,6 +63,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QFileInfo>
 #include <QImage>
 #include <QLabel>
+#include <QLineEdit>
 #include <QListWidget>
 #include <QMainWindow>
 #include <QMenu>
@@ -71,8 +74,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QTimer>
+#include <QToolButton>
 
 #include <algorithm>
+#include <memory>
 #include <cstdlib>
 #include <cstring>
 #include <functional>
@@ -837,6 +842,7 @@ struct DockState {
 	bool createdMain = false;
 	QPointer<QMenu> menu;
 	std::vector<std::string> shotDestinations;
+	std::vector<std::string> rowDestinations; /* destination rows group: ids to remove */
 	QStringList shotScenes;
 	QString shotImage;
 };
@@ -952,10 +958,12 @@ void dockCheckStudio()
 	const bool camTab = true;
 #endif
 	R->check(tabs && camTab && !shown(dockChild<QWidget>("recLine")), "dock-studio-tabs");
-	ui::Chip *enc = dockChild<ui::Chip>("encoderChip");
+	QLabel *outputs = dockChild<QLabel>("footerOutputs");
 	QLabel *cpu = dockChild<QLabel>("footerCpu");
-	R->check(enc && shown(enc) && !enc->text().isEmpty() && cpu && shown(cpu), "dock-studio-footer",
-		 enc ? enc->text() + QStringLiteral(" | ") + (cpu ? cpu->text() : QString()) : QString());
+	R->check(!dockChild<QWidget>("encoderChip") && shown(outputs) && shown(cpu) &&
+			 shown(dockChild<QWidget>("footerSettings")),
+		 "dock-studio-footer-no-encoder-chip",
+		 (outputs ? outputs->text() : QString()) + QStringLiteral(" | ") + (cpu ? cpu->text() : QString()));
 	auto *scenes = dockChild<ui::SceneList>("verticalScenes");
 	R->check(scenes && scenes->rowHeight() == ui::tokens::kRowStudio, "dock-studio-row-height",
 		 scenes ? QString::number(scenes->rowHeight()) : QString());
@@ -975,7 +983,9 @@ void dockCheckCompact()
 	R->check(shown(dockChild<QWidget>("recLine")) && shown(dockChild<QWidget>("replayLine")) &&
 			 !shown(dockChild<QWidget>("recordButton")),
 		 "dock-compact-lines");
-	R->check(shown(dockChild<QWidget>("encoderChip")), "dock-compact-footer");
+	R->check(!dockChild<QWidget>("encoderChip") && shown(dockChild<QWidget>("footerOutputs")) &&
+			 shown(dockChild<QWidget>("footerCpu")) && shown(dockChild<QWidget>("footerSettings")),
+		 "dock-compact-footer-no-encoder-chip");
 	auto *scenes = dockChild<ui::SceneList>("verticalScenes");
 	R->check(scenes && scenes->rowHeight() == ui::tokens::kRowCompact, "dock-compact-row-height",
 		 scenes ? QString::number(scenes->rowHeight()) : QString());
@@ -1168,6 +1178,183 @@ void dockCleanup()
 	}
 	gd.mainScene.clear();
 	dockRestore();
+}
+
+/* Destination rows: tile from the platform or the server, settings button before
+ * ▶ / ■ with clear tooltips, the settings button opens the destination dialog, and
+ * a TikTok destination added from the dock menu shows the TikTok tile. */
+ui::DestinationRow *dockRow(const std::string &id)
+{
+	ui::Dock *d = dockWidget();
+	return d ? d->findChild<ui::DestinationRow *>(QString::fromStdString(id)) : nullptr;
+}
+
+void dockRowsSetup()
+{
+	core::Settings &st = V().settings();
+	const struct {
+		core::Platform p;
+		const char *name;
+		const char *server;
+	} list[] = {{core::Platform::TikTok, "Selftest TikTok", ""},
+		    /* saved as Instagram, but the server is TikTok's */
+		    {core::Platform::Instagram, "Selftest TikTok server", "rtmp://push.tiktokcdn.com/game/"},
+		    {core::Platform::Instagram, "Selftest Instagram", ""},
+		    {core::Platform::CustomRtmp, "Selftest SRT", "srt://127.0.0.1:9999"}};
+	for (const auto &e : list) {
+		const std::string id = core::makeId((unsigned long long)QDateTime::currentMSecsSinceEpoch() +
+							    gd.rowDestinations.size() + 100,
+						    st.destinationIds());
+		core::Destination d = core::makeDestination(e.p, id, e.name);
+		d.server = e.server;
+		st.destinations.push_back(d);
+		gd.rowDestinations.push_back(id);
+	}
+	V().settingsEdited();
+}
+
+void dockCheckRows(const char *layout)
+{
+	const core::Platform want[] = {core::Platform::TikTok, core::Platform::TikTok, core::Platform::Instagram,
+				       core::Platform::CustomSrt};
+	int tiles = 0, buttons = 0;
+	QStringList detail;
+	for (size_t i = 0; i < gd.rowDestinations.size() && i < 4; i++) {
+		ui::DestinationRow *row = dockRow(gd.rowDestinations[i]);
+		if (!row) {
+			detail << QStringLiteral("no row");
+			continue;
+		}
+		const core::Platform tile = row->tile()->platform();
+		if (tile == want[i])
+			tiles++;
+		QToolButton *gear = row->settingsButton();
+		QToolButton *play = row->toggleButton();
+		const core::Destination *d = V().settings().findDestination(gd.rowDestinations[i]);
+		const QString name = d ? QString::fromStdString(d->name) : QString();
+		const int gearRight = gear ? gear->geometry().right() : 0;
+		const int playLeft = play ? play->geometry().left() : 0;
+		const bool ok = gear && play && shown(gear) && shown(play) && gearRight < playLeft &&
+				gear->size() == QSize(ui::tokens::kButton, ui::tokens::kButton) &&
+				gear->size() == play->size() && gear->toolTip() == T("Dock.DestinationSettings") &&
+				play->toolTip() == T("Dock.GoLive").arg(name);
+		if (ok)
+			buttons++;
+		detail << QStringLiteral("%1: tile %2, gear %3..%4 play %5, tip '%6'")
+				  .arg(name)
+				  .arg(QString::fromUtf8(core::platformId(tile)))
+				  .arg(gear ? gear->geometry().left() : -1)
+				  .arg(gearRight)
+				  .arg(playLeft)
+				  .arg(play ? play->toolTip() : QString());
+	}
+	const QString text = detail.join(QStringLiteral(" | "));
+	R->check(tiles == 4, layout[0] == 's' ? "dock-studio-row-tiles" : "dock-compact-row-tiles", text);
+	R->check(buttons == 4,
+		 layout[0] == 's' ? "dock-studio-row-settings-before-play" : "dock-compact-row-settings-before-play",
+		 text);
+}
+
+/* Clicks the settings button of the row saved as Instagram with a TikTok server:
+ * the destination dialog opens for it, with TikTok selected from the server. */
+void dockRowSettingsOpensDialog()
+{
+	ui::DestinationRow *row = gd.rowDestinations.size() > 1 ? dockRow(gd.rowDestinations[1]) : nullptr;
+	if (!row) {
+		R->check(false, "dock-row-settings-opens-dialog", QStringLiteral("no row"));
+		return;
+	}
+	auto seen = std::make_shared<QString>();
+	QTimer::singleShot(400, [seen] {
+		auto *dlg = qobject_cast<ui::DestinationDialog *>(QApplication::activeModalWidget());
+		if (!dlg) {
+			*seen = QStringLiteral("no dialog");
+			return;
+		}
+		const core::Destination d = dlg->destination();
+		*seen = QString::fromStdString(d.id) + QLatin1Char('|') +
+			QString::fromUtf8(core::platformId(d.platform));
+		dlg->reject();
+	});
+	row->settingsButton()->click(); /* modal: returns once the timer closed the dialog */
+	const QString want = QString::fromStdString(gd.rowDestinations[1]) + QStringLiteral("|tiktok");
+	R->check(*seen == want, "dock-row-settings-opens-dialog", *seen);
+}
+
+/* Each platform survives the dialog; a TikTok server switches the platform to TikTok. */
+void dockDialogPlatforms()
+{
+	int ok = 0;
+	for (core::Platform p : core::allPlatforms()) {
+		ui::DestinationDialog dlg(core::makeDestination(p, "x", "x"));
+		if (dlg.destination().platform == p)
+			ok++;
+	}
+	R->check(ok == (int)core::allPlatforms().size(), "dock-dialog-keeps-platform",
+		 QStringLiteral("%1/%2").arg(ok).arg(core::allPlatforms().size()));
+	ui::DestinationDialog dlg(core::makeDestination(core::Platform::Instagram, "x", "x"));
+	/* The server field is the line edit with the rtmps:// placeholder. */
+	for (QLineEdit *e : dlg.findChildren<QLineEdit *>())
+		if (e->placeholderText().startsWith(QStringLiteral("rtmps://")))
+			e->setText(QStringLiteral("rtmp://push-rtmp-l11-va01.tiktokcdn.com/game/"));
+	R->check(dlg.destination().platform == core::Platform::TikTok, "dock-dialog-platform-from-server",
+		 QString::fromUtf8(core::platformId(dlg.destination().platform)));
+}
+
+/* The user's path: + Add destination > TikTok, OK in the dialog. */
+void dockAddTikTokFromMenu()
+{
+	auto *add = dockChild<QToolButton>("addDestination");
+	QAction *tiktok = nullptr;
+	if (add && add->menu())
+		for (QAction *a : add->menu()->actions())
+			if (a->text() == QLatin1String("TikTok"))
+				tiktok = a;
+	if (!tiktok) {
+		R->check(false, "dock-add-tiktok-from-menu", QStringLiteral("no TikTok entry"));
+		return;
+	}
+	const std::vector<std::string> before = V().settings().destinationIds();
+	auto seen = std::make_shared<QString>();
+	QTimer::singleShot(400, [seen] {
+		auto *dlg = qobject_cast<ui::DestinationDialog *>(QApplication::activeModalWidget());
+		if (!dlg) {
+			*seen = QStringLiteral("no dialog");
+			return;
+		}
+		*seen = QString::fromUtf8(core::platformId(dlg->destination().platform));
+		dlg->accept();
+	});
+	tiktok->trigger(); /* modal */
+	std::string added;
+	for (const std::string &id : V().settings().destinationIds())
+		if (std::find(before.begin(), before.end(), id) == before.end())
+			added = id;
+	if (!added.empty())
+		gd.rowDestinations.push_back(added);
+	const core::Destination *d = added.empty() ? nullptr : V().settings().findDestination(added);
+	ui::DestinationRow *row = added.empty() ? nullptr : dockRow(added);
+	R->check(d && d->platform == core::Platform::TikTok && *seen == QLatin1String("tiktok") && row &&
+			 row->tile()->platform() == core::Platform::TikTok,
+		 "dock-add-tiktok-from-menu",
+		 QStringLiteral("dialog %1, saved %2, tile %3")
+			 .arg(*seen)
+			 .arg(d ? QString::fromUtf8(core::platformId(d->platform)) : QStringLiteral("-"))
+			 .arg(row ? QString::fromUtf8(core::platformId(row->tile()->platform()))
+				  : QStringLiteral("-")));
+}
+
+void dockRowsRemove()
+{
+	auto &list = V().settings().destinations;
+	list.erase(std::remove_if(list.begin(), list.end(),
+				  [](const core::Destination &d) {
+					  return std::find(gd.rowDestinations.begin(), gd.rowDestinations.end(),
+							   d.id) != gd.rowDestinations.end();
+				  }),
+		   list.end());
+	gd.rowDestinations.clear();
+	V().settingsEdited();
 }
 
 /* Rows of the real streams (multistream group): live, time, Mbps. */
@@ -1451,6 +1638,8 @@ void runSelfTest()
 		}
 		V().unlinkScene(QString::fromUtf8(kMainName));
 		dockCloseMenu();
+		if (!gd.rowDestinations.empty())
+			dockRowsRemove();
 		dockRestore();
 		restoreDock();
 		if (g.cpu) {
@@ -1593,6 +1782,17 @@ void runSelfTest()
 		R->add(200, [] { dockRecordCheckStopped(); });
 		R->add(200, [] { dockPreviewChecks(); });
 		R->add(800, [] { dockPreviewWindowCheck(); });
+		R->add(200, [] { dockRowsSetup(); });
+		R->add(400, [] { dockCheckRows("studio"); });
+		R->add(100, [] { dockRowSettingsOpensDialog(); });
+		R->add(100, [] { dockDialogPlatforms(); });
+		R->add(100, [] { dockAddTikTokFromMenu(); });
+		R->add(0, [] { dockWidget()->setLayoutChoice(core::LayoutChoice::Compact); });
+		R->add(400, [] {
+			dockCheckRows("compact");
+			dockWidget()->setLayoutChoice(core::LayoutChoice::Automatic);
+		});
+		R->add(200, [] { dockRowsRemove(); });
 		R->add(300, [] { dockCleanup(); });
 	}
 	if (getenv("VERTICAL_SELFTEST_SHOTS") && getenv("VERTICAL_SELFTEST_RTMP_PORT")) {

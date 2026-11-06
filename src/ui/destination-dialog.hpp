@@ -24,6 +24,7 @@ public:
 
 private:
 	void onPlatformChanged();
+	void onServerChanged();
 	void validateNow();
 
 	core::Destination base_;

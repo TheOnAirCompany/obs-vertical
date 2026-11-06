@@ -46,7 +46,6 @@ namespace {
 constexpr int kLineHeight = tokens::kButton + 4;    /* Compact lines hold a 28 px button */
 constexpr int kNarrowOutputs = 380;                 /* below: Start all / Stop all show icons only */
 constexpr int kFooterVersionMin = 600;              /* below: the footer drops the version */
-constexpr int kFooterEncoderLabelMin = 560;         /* below: the footer drops "Shared encoder" */
 constexpr int kHeaderLabelMin = 400;                /* below: the header keeps the switch, not its label */
 constexpr int kBigButtonMin = 100;                  /* Stop Recording may clip its text below this */
 constexpr int kVirtualCamPollSeconds = 3;           /* re-check the extension while not running */
@@ -814,11 +813,6 @@ QWidget *Dock::buildFooter()
 	outer->setSpacing(4);
 	auto *h = new QHBoxLayout();
 	h->setSpacing(tokens::kGap);
-	encoderLabel_ = mutedSmall(w);
-	encoderLabel_->setText(T("Dock.SharedEncoder"));
-	encoderChip_ = new Chip(w);
-	encoderChip_->setObjectName(QStringLiteral("encoderChip"));
-	encoderChip_->setFont(scaledFont(font(), 10.5 / 12.0, true));
 	outputsLive_ = mutedSmall(w);
 	outputsLive_->setObjectName(QStringLiteral("footerOutputs"));
 	cpu_ = mutedSmall(w);
@@ -829,23 +823,13 @@ QWidget *Dock::buildFooter()
 	gear_->setObjectName(QStringLiteral("footerSettings"));
 	connect(gear_, &QToolButton::clicked, this, [this] { openSettings(); });
 	/* The status line may clip rather than widen the dock. */
-	for (QLabel *l : {encoderLabel_, outputsLive_, cpu_, version_})
+	for (QLabel *l : {outputsLive_, cpu_, version_})
 		l->setMinimumWidth(1);
-	h->addWidget(encoderLabel_);
-	h->addWidget(encoderChip_);
+	/* One line in both layouts: outputs live, CPU, then version and settings. */
 	h->addWidget(outputsLive_);
 	h->addWidget(cpu_);
 	h->addStretch(1);
 	outer->addLayout(h);
-	/* Compact: outputs and CPU wrap onto a second line. */
-	footerWrap_ = new QWidget(w);
-	auto *wrap = new QHBoxLayout(footerWrap_);
-	wrap->setContentsMargins(0, 0, 0, 0);
-	wrap->setSpacing(tokens::kGap);
-	footerWrapLayout_ = wrap;
-	footerRowLayout_ = h;
-	outer->addWidget(footerWrap_);
-	footerWrap_->hide();
 	if (decisions::kFooter == decisions::Footer::TwoLines) {
 		footerSecond_ = new QWidget(w);
 		auto *h2 = new QHBoxLayout(footerSecond_);
@@ -885,7 +869,6 @@ void Dock::updateMode()
 	stopAll_->setText(narrow ? QString() : T("Dock.StopAll"));
 	/* Header and status line drop their least useful text first. */
 	linkedLabel_->setVisible(width() >= kHeaderLabelMin);
-	encoderLabel_->setVisible(studio && width() >= kFooterEncoderLabelMin);
 	version_->setVisible((studio || decisions::kFooter == decisions::Footer::TwoLines) &&
 			     (width() >= kFooterVersionMin || decisions::kFooter == decisions::Footer::TwoLines));
 }
@@ -935,22 +918,6 @@ void Dock::applyMode(core::DockMode mode)
 	scenes_->setRowHeight(studio ? tokens::kRowStudio : tokens::kRowCompact);
 
 	footer_->setVisible(studio || decisions::kFooter != decisions::Footer::HiddenInCompact);
-	/* Status line: one line in Studio; in Compact outputs and CPU go to a second line. */
-	footerRowLayout_->removeWidget(outputsLive_);
-	footerRowLayout_->removeWidget(cpu_);
-	while (QLayoutItem *it = footerWrapLayout_->takeAt(0))
-		delete it;
-	if (studio) {
-		footerRowLayout_->insertWidget(2, outputsLive_);
-		footerRowLayout_->insertWidget(3, cpu_);
-	} else {
-		footerWrapLayout_->addWidget(outputsLive_);
-		footerWrapLayout_->addWidget(cpu_);
-		footerWrapLayout_->addStretch(1);
-	}
-	footerWrap_->setVisible(!studio);
-	outputsLive_->show();
-	cpu_->show();
 
 	rebuildDestinations();
 	updateMode();
@@ -1076,7 +1043,7 @@ void Dock::rebuildDestinations()
 	const bool compact = mode_ == core::DockMode::Compact;
 	const auto &dests = Vertical::instance().settings().destinations;
 	for (const core::Destination &d : dests) {
-		auto *row = new DestinationRow(d.id, d.platform, qs(d.name), compact, destinationsList_);
+		auto *row = new DestinationRow(d.id, core::tilePlatform(d), qs(d.name), compact, destinationsList_);
 		row->setSeparator(!rows_.empty());
 		connect(row, &DestinationRow::toggleRequested, this,
 			[](const std::string &id) { Outputs::instance().toggleDestination(id); });
@@ -1273,24 +1240,6 @@ void Dock::refreshVirtualCam()
 void Dock::refreshFooter()
 {
 	Outputs &o = Outputs::instance();
-	const EncoderChip c = o.encoderChip();
-	if (c.none) {
-		encoderChip_->setText(T("Encoder.NoneShort"));
-		encoderChip_->setColors(QColor::fromRgba(tokens::kChipWarnFill),
-					QColor::fromRgba(tokens::kChipWarnBorder),
-					QColor::fromRgba(tokens::kChipWarnText), 10);
-	} else {
-		encoderChip_->setText(T(c.hardware ? "Encoder.ChipHardware" : "Encoder.ChipSoftware").arg(c.family));
-		if (c.hardware)
-			encoderChip_->setColors(QColor::fromRgba(tokens::kChipOkFill),
-						QColor::fromRgba(tokens::kChipOkBorder),
-						QColor::fromRgba(tokens::kChipOkText), 10);
-		else
-			encoderChip_->setColors(QColor::fromRgba(tokens::kChipWarnFill),
-						QColor::fromRgba(tokens::kChipWarnBorder),
-						QColor::fromRgba(tokens::kChipWarnText), 10);
-	}
-	encoderChip_->setToolTip(o.encoderSummary());
 	const Surfaces s = surfaces(this);
 	const QString bold = QStringLiteral("<b style='color:%1'>%2</b>").arg(s.text.name());
 	outputsLive_->setText(T("Dock.FooterOutputs").arg(bold.arg(T("Dock.LiveCount").arg(o.liveStreamCount()))));

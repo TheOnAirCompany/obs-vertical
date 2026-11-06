@@ -1,7 +1,7 @@
 #pragma once
 
 /* Rows of the Vertical dock: the scene list (program row, drag handle, link
- * icon) and the destination rows (platform tile, status line, ▶ / ■, ⋯). */
+ * icon) and the destination rows (platform tile, status line, settings, ▶ / ■, ⋯). */
 
 #include "core/dock-model.hpp"
 
@@ -88,6 +88,8 @@ public:
 	QString statusText() const; /* the status line, as shown in Studio */
 	bool showsStop() const { return running_; }
 	QToolButton *toggleButton() const { return toggle_; }
+	QToolButton *settingsButton() const { return settings_; }
+	PlatformTile *tile() const { return tile_; }
 
 signals:
 	void toggleRequested(const std::string &id);
@@ -98,6 +100,7 @@ signals:
 protected:
 	void paintEvent(QPaintEvent *e) override;
 	void contextMenuEvent(QContextMenuEvent *e) override;
+	void changeEvent(QEvent *e) override;
 
 private:
 	void showMenu(const QPoint &globalPos);
@@ -111,6 +114,7 @@ private:
 	ElidedLabel *name_;
 	StatusDot *dot_;
 	ElidedLabel *status_ = nullptr;
+	QToolButton *settings_;
 	QToolButton *toggle_;
 	QToolButton *more_ = nullptr;
 };
