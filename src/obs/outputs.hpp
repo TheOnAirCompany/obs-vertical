@@ -75,6 +75,11 @@ public:
 
 	/* "Apple VT H264 Hardware Encoder · 2 video encoders for 3 outputs". */
 	QString encoderSummary() const;
+	/* A running output encodes video on the CPU (x264): the dock warns. */
+	bool softwareEncoderInUse() const;
+	int videoEncoderCount() const { return (int)video_.size(); }
+	/* A hardware video encoder exists (what "auto" picks). */
+	bool hardwareEncoderAvailable() const;
 	/* Number of destinations streaming (Live). */
 	int liveStreamCount() const;
 	/* Encoder types and output types found at runtime (logged once). */

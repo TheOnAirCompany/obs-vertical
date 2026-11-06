@@ -11,7 +11,7 @@ Redesigned dock.
 - Destinations with platform tiles, status lines from the output engine (connecting, live with uptime and bitrate, reconnecting with the attempt number, error, stopped), a settings button (opens the destination) before ▶ "Go live on …" / ■ "Stop", ⋯ (edit, duplicate, delete), Start all / Stop all in the section header, add a destination from the dock.
 - The platform follows the server: a TikTok, YouTube, Instagram or Facebook server (or srt://) selects its platform in the destination dialog, and the tile shows the platform of the server (a TikTok destination no longer shows the Instagram tile).
 - Recording, replay buffer and virtual camera tabs in Studio (large Stop Recording button and timer), three lines in Compact; virtual camera status (not installed, waiting for approval, activated, running) with a Beta badge.
-- Status bar: outputs live, CPU, version and settings.
+- Status bar: outputs live, CPU, version and settings; a small amber "Software encoder (CPU)" warning only when the vertical video is encoded by the CPU (x264), nothing when a hardware encoder is used.
 - Colours follow the OBS theme; status colours are fixed.
 - Self-test: dock group (layouts, resize, scene click, link menu, recording tab, destination rows: tiles, settings button before ▶, dialog, add TikTok from the dock) and destination rows during real streams.
 

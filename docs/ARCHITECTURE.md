@@ -200,7 +200,7 @@ VERTICAL_SELFTEST=1 VERTICAL_SELFTEST_QUIT=1 /Applications/OBS.app/Contents/MacO
 | `gate` | With the dock preview hidden and no output, channel 0 is empty; a recording puts the current scene on it; it is empty again after the stop. |
 | `record` | 3 s recording of a moving noise image into `$TMPDIR/vertical-selftest`; logs the encoder actually used and checks it is the plugin's choice (hardware when available); the file exists and is over 50 KB. Then recording + replay buffer together share one video encoder and one audio encoder. |
 | `stream` | A destination to `rtmp://127.0.0.1:1/live` (key `test`) reports an error or reconnect state within 8 s, and its dock row shows it (dot, text, ▶ / ■); it stops and is removed. |
-| `dock` | The dock floated and resized: Studio at 700 px (header chip, preview, scenes section, Start all / Stop all, destinations, tabs, footer, 32 px rows), still Studio just under the threshold (hysteresis), Compact at 320 px (no section headers, three lines, 28 px rows); forced layout from the ⋯ menu choice; a click on a scene row puts it on program; the link icon of a row opens the link menu, which links then unlinks a 16:9 scene; Start / Stop Recording in the Recording tab (timer, Compact line); preview collapse and detached preview window; no encoder chip in the footer; destination rows in Studio and Compact: tile from the platform or the server (a row saved as Instagram with a TikTok server shows TikTok, srt:// shows SRT), a 28 px settings button before ▶ / ■ with the "Settings" and "Go live on …" tooltips, the settings button opens the destination dialog, every platform survives the dialog, a TikTok server selects TikTok, and + Add destination > TikTok saves a TikTok destination with the TikTok tile. |
+| `dock` | The dock floated and resized: Studio at 700 px (header chip, preview, scenes section, Start all / Stop all, destinations, tabs, footer, 32 px rows), still Studio just under the threshold (hysteresis), Compact at 320 px (no section headers, three lines, 28 px rows); forced layout from the ⋯ menu choice; a click on a scene row puts it on program; the link icon of a row opens the link menu, which links then unlinks a 16:9 scene; Start / Stop Recording in the Recording tab (timer, Compact line); preview collapse and detached preview window; no encoder chip in the footer, and the software encoder warning hidden with VideoToolbox, shown while a recording forced to x264 runs, hidden after; destination rows in Studio and Compact: tile from the platform or the server (a row saved as Instagram with a TikTok server shows TikTok, srt:// shows SRT), a 28 px settings button before ▶ / ■ with the "Settings" and "Go live on …" tooltips, the settings button opens the destination dialog, every platform survives the dialog, a TikTok server selects TikTok, and + Add destination > TikTok saves a TikTok destination with the TikTok tile. |
 
 The log (`~/Library/Application Support/obs-studio/logs`) gets one line per check,
 `[selftest] PASS|FAIL <name> <detail>`, a CPU sample taken during the recording,
@@ -246,7 +246,9 @@ destinations, three lines) below, with a 16 px hysteresis. The ⋯ menu can forc
   else the saved platform; the dialog selects that platform when the server is typed.
   Bitrate: delta of `obs_output_get_total_bytes` over the last second; uptime from the
   `start` signal.
-* Status bar: outputs live, process CPU (`os_cpu_usage_info`), version and settings.
+* Status bar: outputs live, process CPU (`os_cpu_usage_info`), version and settings; an
+  amber "Software encoder (CPU)" warning only while the vertical video is encoded by the
+  CPU (x264), or when no hardware encoder exists (`core::showSoftwareEncoderWarning`).
 
 Colours follow the OBS theme palette; status colours are fixed (red `#E5484D` live or
 error, amber `#E3A748` connecting or waiting, green `#30A46C` ready, grey stopped).

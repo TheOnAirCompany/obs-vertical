@@ -273,4 +273,9 @@ VcamState vcamState(bool supported, bool extensionInstalled, bool installRequest
 	return installRequested ? VcamState::WaitingApproval : VcamState::NotInstalled;
 }
 
+bool showSoftwareEncoderWarning(bool encodersRunning, bool runningSoftware, bool hardwareAvailable)
+{
+	return encodersRunning ? runningSoftware : !hardwareAvailable;
+}
+
 } // namespace vertical::core

@@ -1600,6 +1600,40 @@ void shotsRemove()
 	dockRestore();
 }
 
+/* ------------------------------------------------------------------ encoder warning */
+
+void encoderWarningHidden(const char *name)
+{
+	auto *w = dockChild<QLabel>("footerEncoderWarning");
+	R->check(w && !w->isVisible(), name,
+		 QStringLiteral("hardware %1, software in use %2")
+			 .arg(O().hardwareEncoderAvailable())
+			 .arg(O().softwareEncoderInUse()));
+}
+
+void encoderForceX264()
+{
+	useTempRecordFolder();
+	V().settings().recording.encoding.video.encoder = "obs_x264";
+	V().settingsEdited();
+	QString error;
+	R->check(O().startRecording(&error), "dock-encoder-x264-record-start", error);
+}
+
+void encoderWarningShown()
+{
+	auto *w = dockChild<QLabel>("footerEncoderWarning");
+	R->check(w && w->isVisible() && O().softwareEncoderInUse(), "dock-encoder-warning-shown-x264",
+		 w ? w->text() + QStringLiteral(" | ") + w->toolTip() : QString());
+	O().stopRecording();
+}
+
+void encoderRestore()
+{
+	V().settings().recording.encoding.video.encoder = g.savedRecording.encoding.video.encoder;
+	V().settingsEdited();
+}
+
 bool enabled(const char *group)
 {
 	const char *only = getenv("VERTICAL_SELFTEST_ONLY");
@@ -1780,6 +1814,16 @@ void runSelfTest()
 		R->add(2500, [] { dockRecordCheckRunning(); });
 		R->waitUntil("dock-record-stopped", 15000, [] { return !O().recordingActive(); });
 		R->add(200, [] { dockRecordCheckStopped(); });
+		R->add(300, [] { encoderWarningHidden("dock-encoder-warning-hidden-hardware"); });
+		R->add(0, [] { encoderForceX264(); });
+		R->waitUntil("dock-encoder-x264-live", 5000,
+			     [] { return O().recordingStatus().state == OutputState::Live; });
+		R->add(1500, [] { encoderWarningShown(); });
+		R->waitUntil("dock-encoder-x264-stopped", 15000, [] { return !O().recordingActive(); });
+		R->add(300, [] {
+			encoderRestore();
+			encoderWarningHidden("dock-encoder-warning-hidden-after-stop");
+		});
 		R->add(200, [] { dockPreviewChecks(); });
 		R->add(800, [] { dockPreviewWindowCheck(); });
 		R->add(200, [] { dockRowsSetup(); });

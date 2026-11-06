@@ -182,6 +182,7 @@ private:
 	/* footer */
 	QLabel *outputsLive_ = nullptr;
 	QLabel *cpu_ = nullptr;
+	QLabel *encoderWarning_ = nullptr; /* only when the video is encoded on the CPU */
 	QLabel *version_ = nullptr;
 	QToolButton *gear_ = nullptr;
 	QWidget *footerSecond_ = nullptr;
@@ -190,6 +191,7 @@ private:
 	os_cpu_usage_info_t *cpuInfo_ = nullptr;
 	double cpuValue_ = -1.0;
 	bool vcamInstalled_ = false;
+	bool hardwareAvailable_ = false;
 	bool vcamInstallRequested_ = false;
 	int vcamPollTicks_ = 0;
 };

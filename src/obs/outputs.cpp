@@ -634,6 +634,18 @@ int Outputs::liveStreamCount() const
 	return n;
 }
 
+bool Outputs::softwareEncoderInUse() const
+{
+	if (!video_.empty())
+		return std::any_of(video_.begin(), video_.end(), [](const PooledEncoder &p) { return !p.hardware; });
+	return false;
+}
+
+bool Outputs::hardwareEncoderAvailable() const
+{
+	return core::chooseVideoEncoder(videoEncoders(), core::VideoEncoding()).hardware;
+}
+
 void Outputs::tick()
 {
 	const uint64_t now = os_gettime_ns();

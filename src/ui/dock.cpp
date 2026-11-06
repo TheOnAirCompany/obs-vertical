@@ -817,17 +817,25 @@ QWidget *Dock::buildFooter()
 	outputsLive_->setObjectName(QStringLiteral("footerOutputs"));
 	cpu_ = mutedSmall(w);
 	cpu_->setObjectName(QStringLiteral("footerCpu"));
+	encoderWarning_ = mutedSmall(w);
+	encoderWarning_->setObjectName(QStringLiteral("footerEncoderWarning"));
+	encoderWarning_->setText(QStringLiteral("⚠ ") + T("Dock.SoftwareEncoder"));
+	encoderWarning_->setToolTip(T("Dock.SoftwareEncoderTip"));
+	setMuted(encoderWarning_, QColor::fromRgba(tokens::kAmber));
+	encoderWarning_->hide();
 	version_ = mutedSmall(w);
 	version_->setText(QStringLiteral("Vertical for OBS %1").arg(QString::fromUtf8(PLUGIN_VERSION)));
 	gear_ = iconButton("gear", T("Dock.Settings"), tokens::kSmallButton, true, w);
 	gear_->setObjectName(QStringLiteral("footerSettings"));
 	connect(gear_, &QToolButton::clicked, this, [this] { openSettings(); });
 	/* The status line may clip rather than widen the dock. */
-	for (QLabel *l : {outputsLive_, cpu_, version_})
+	for (QLabel *l : {outputsLive_, cpu_, version_, encoderWarning_})
 		l->setMinimumWidth(1);
-	/* One line in both layouts: outputs live, CPU, then version and settings. */
+	/* One line in both layouts: outputs live, CPU, the software encoder warning when
+	 * needed, then version and settings. */
 	h->addWidget(outputsLive_);
 	h->addWidget(cpu_);
+	h->addWidget(encoderWarning_);
 	h->addStretch(1);
 	outer->addLayout(h);
 	if (decisions::kFooter == decisions::Footer::TwoLines) {
@@ -1250,6 +1258,11 @@ void Dock::refreshFooter()
 		cpu += QStringLiteral(" %");
 	}
 	cpu_->setText(T("Dock.FooterCpu").arg(bold.arg(cpu)));
+	/* Encoder modules may load after the dock: ask again until a hardware one shows up. */
+	if (!hardwareAvailable_)
+		hardwareAvailable_ = o.hardwareEncoderAvailable();
+	encoderWarning_->setVisible(core::showSoftwareEncoderWarning(o.videoEncoderCount() > 0,
+								     o.softwareEncoderInUse(), hardwareAvailable_));
 }
 
 void Dock::refreshTimers()
