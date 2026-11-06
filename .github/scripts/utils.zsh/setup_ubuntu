@@ -1,0 +1,138 @@
+autoload -Uz log_error log_status log_info mkcd
+
+if (( ! ${+project_root} )) {
+  log_error "'project_root' not set. Please set before running ${0}."
+  return 2
+}
+
+if (( ! ${+target} )) {
+  log_error "'target' not set. Please set before running ${0}."
+  return 2
+}
+
+pushd ${project_root}
+
+typeset -g QT_VERSION
+
+local -a apt_args=(
+  ${CI:+-y}
+  --no-install-recommends
+)
+if (( _loglevel == 0 )) apt_args+=(--quiet)
+
+if (( ! (${skips[(Ie)all]} + ${skips[(Ie)deps]}) )) {
+  log_group 'Installing obs-studio build dependencies...'
+
+  local suffix
+  if [[ ${CPUTYPE} != "${target##*-}" ]] {
+    local -A arch_mappings=(
+      aarch64 arm64
+      x86_64 amd64
+    )
+
+    suffix=":${arch_mappings[${target##*-}]}"
+
+    sudo apt-get install ${apt_args} gcc-${${target##*-}//_/-}-linux-gnu g++-${${target##*-}//_/-}-linux-gnu
+  }
+
+  sudo add-apt-repository --yes ppa:obsproject/obs-studio
+  sudo apt update
+
+  sudo apt-get install ${apt_args} \
+    build-essential \
+    libgles2-mesa-dev \
+    libsimde-dev \
+    obs-studio
+
+  local -a _qt_packages=()
+
+  if (( QT_VERSION == 5 )) {
+    _qt_packages+=(
+      qtbase5-dev${suffix}
+      libqt5svg5-dev${suffix}
+      qtbase5-private-dev${suffix}
+      libqt5x11extras5-dev${suffix}
+    )
+  } else {
+    _qt_packages+=(
+      qt6-base-dev${suffix}
+      libqt6svg6-dev${suffix}
+      qt6-base-private-dev${suffix}
+    )
+  }
+
+  sudo apt-get install ${apt_args} ${_qt_packages}
+
+  # The OBS PPA does not publish packages for every Ubuntu release (none for 26.04 yet), and the distribution
+  # obs-studio package ships no development files. Build and install libobs and obs-frontend-api from the OBS
+  # version pinned in buildspec.json when no matching CMake package is available.
+  local -a _libobs_configs=(
+    /usr/lib/cmake/libobs/libobsConfig.cmake(N)
+    /usr/lib/*/cmake/libobs/libobsConfig.cmake(N)
+    /usr/local/lib/cmake/libobs/libobsConfig.cmake(N)
+  )
+
+  if (( ! ${#_libobs_configs} )) {
+    log_info 'No libobs development package found, building libobs from source...'
+
+    local _obs_version=$(jq -r '.dependencies."obs-studio".version' buildspec.json)
+    local _obs_src="${project_root}/.deps/obs-studio-${_obs_version}"
+
+    sudo apt-get install ${apt_args} \
+      cmake \
+      ninja-build \
+      pkg-config \
+      libasound2-dev \
+      libavcodec-dev \
+      libavdevice-dev \
+      libavfilter-dev \
+      libavformat-dev \
+      libavutil-dev \
+      libcurl4-openssl-dev \
+      libdrm-dev \
+      libgl1-mesa-dev \
+      libglvnd-dev \
+      libjansson-dev \
+      libpci-dev \
+      libpulse-dev \
+      libswresample-dev \
+      libswscale-dev \
+      libudev-dev \
+      libva-dev \
+      libwayland-dev \
+      libx11-dev \
+      libx11-xcb-dev \
+      libxcb-composite0-dev \
+      libxcb-randr0-dev \
+      libxcb-shm0-dev \
+      libxcb-xfixes0-dev \
+      libxcb-xinerama0-dev \
+      libxcb1-dev \
+      libxcomposite-dev \
+      libxinerama-dev \
+      libxkbcommon-dev \
+      uthash-dev \
+      zlib1g-dev \
+      extra-cmake-modules
+
+    mkdir -p ${_obs_src:h}
+    if [[ ! -d ${_obs_src} ]] {
+      mkdir -p ${_obs_src}
+      curl --fail --location --silent --show-error \
+        "https://github.com/obsproject/obs-studio/archive/refs/tags/${_obs_version}.tar.gz" \
+        | tar --extract --gzip --strip-components=1 --directory=${_obs_src}
+    }
+
+    cmake -S ${_obs_src} -B ${_obs_src}/build_libobs -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_INSTALL_PREFIX=/usr/local \
+      -DENABLE_FRONTEND=OFF \
+      -DENABLE_CORE_MODULES=OFF \
+      -DENABLE_SCRIPTING=OFF
+    cmake --build ${_obs_src}/build_libobs
+    sudo cmake --install ${_obs_src}/build_libobs
+    sudo ldconfig
+  }
+
+  log_group
+}

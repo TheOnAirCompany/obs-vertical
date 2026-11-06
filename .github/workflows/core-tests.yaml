@@ -1,0 +1,24 @@
+name: Core Unit Tests 🧪
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  core-tests:
+    name: Core tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Configure
+        run: cmake -S tests -B build_tests -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build_tests --config Release
+      - name: Test
+        run: ctest --test-dir build_tests -C Release --output-on-failure
