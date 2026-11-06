@@ -10,7 +10,7 @@ Vertical for OBS is a native OBS Studio plugin that adds a **vertical canvas** w
 
 </div>
 
-> **Status: 0.1.0, first version.** For OBS Studio 33.0.1. Tested on macOS inside OBS: canvas, scenes, recording and real streaming to three RTMP servers sharing one hardware encoder. Windows and Linux builds pass CI but have not run inside OBS yet. The 9:16 virtual camera ships as a separate signed package; its activation has not been tested on a real Mac yet ([docs/VIRTUAL-CAMERA.md](docs/VIRTUAL-CAMERA.md)). Keep a backup of your scene collection.
+> **Status: 0.3.0, first public version.** For OBS Studio 33.0.1. Tested on macOS inside OBS: canvas, scenes, dock, recording, real streaming to several RTMP servers sharing one hardware encoder, and the Vertical Camera & Audio pair (camera and microphone measured in sync within a few milliseconds). Vertical Camera & Audio is marked **beta**: tested on one Mac so far. Windows and Linux builds pass CI but have not run inside OBS yet. Keep a backup of your scene collection.
 
 ## What it adds
 
