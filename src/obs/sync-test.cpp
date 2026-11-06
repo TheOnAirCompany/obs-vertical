@@ -185,11 +185,13 @@ uint64_t trigger()
 		return 0;
 	if (!g_flash)
 		g_flash = obs_source_create_private(kFlashId, "Vertical sync flash", nullptr);
-	if (!g_beep)
-		g_beep = obs_source_create_private(kBeepId, "Vertical sync beep", nullptr);
+	finish();
+	/* A new beep source every time: OBS smooths the timestamps of a source's audio
+	 * against what it sent before, which could move this beep off its time. */
+	obs_source_release(g_beep);
+	g_beep = obs_source_create_private(kBeepId, "Vertical sync beep", nullptr);
 	if (!g_flash || !g_beep)
 		return 0;
-	finish();
 
 	const core::Size size = v.canvasSize();
 	g_width = (uint32_t)size.width;

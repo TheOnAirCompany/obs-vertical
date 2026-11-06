@@ -17,6 +17,7 @@
 //   vertical-sync-measure [--count 5] [--interval 3] [--audio-only] [--no-trigger]
 
 import AVFoundation
+import CoreAudio
 import CoreMedia
 import Foundation
 import notify
@@ -191,6 +192,70 @@ final class Detector: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     }
 }
 
+// MARK: CoreAudio tap
+
+/// Reads "Vertical Audio" directly with a HAL IO proc: the time stamps are the device's
+/// own (input time of each buffer, host clock), without AVFoundation in between.
+final class HALTap {
+    private(set) var onsets: [Double] = []
+    private let lock = NSLock()
+    private var quietSince: Double = 0
+    private var inBeep = false
+    private var proc: AudioDeviceIOProcID?
+    private let device: AudioObjectID
+
+    init?(uid: String) {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyTranslateUIDToDevice, mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var cfUID = uid as CFString
+        var id = AudioObjectID(0)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        let status = withUnsafeMutablePointer(to: &cfUID) {
+            AudioObjectGetPropertyData(
+                AudioObjectID(kAudioObjectSystemObject), &address, UInt32(MemoryLayout<CFString>.size), $0, &size, &id)
+        }
+        guard status == noErr, id != 0 else { return nil }
+        device = id
+        let rate = 48000.0
+        let ticksToSeconds: Double = {
+            var tb = mach_timebase_info_data_t()
+            mach_timebase_info(&tb)
+            return Double(tb.numer) / Double(tb.denom) / 1e9
+        }()
+        AudioDeviceCreateIOProcIDWithBlock(&proc, device, nil) { [weak self] _, input, inputTime, _, _ in
+            guard let self = self, input.pointee.mNumberBuffers > 0, let data = input.pointee.mBuffers.mData else {
+                return
+            }
+            let channels = Int(max(1, input.pointee.mBuffers.mNumberChannels))
+            let frames = Int(input.pointee.mBuffers.mDataByteSize) / (4 * channels)
+            let start = Double(inputTime.pointee.mHostTime) * ticksToSeconds
+            let samples = data.assumingMemoryBound(to: Float32.self)
+            self.lock.lock()
+            for i in 0..<frames {
+                let t = start + Double(i) / rate
+                if abs(samples[i * channels]) > 0.2 {
+                    if !self.inBeep && t - self.quietSince > 0.2 { self.onsets.append(t) }
+                    self.inBeep = true
+                    self.quietSince = t
+                } else if self.inBeep && t - self.quietSince > 0.05 {
+                    self.inBeep = false
+                }
+            }
+            self.lock.unlock()
+        }
+        AudioDeviceStart(device, proc)
+    }
+
+    func take() -> Double? {
+        lock.lock()
+        defer { lock.unlock() }
+        let last = onsets.last
+        onsets.removeAll()
+        return last
+    }
+}
+
 // MARK: Session
 
 guard requestAccess(.audio), audioOnly || requestAccess(.video) else {
@@ -238,6 +303,7 @@ if camera != nil {
 }
 session.commitConfiguration()
 session.startRunning()
+let tap = HALTap(uid: "company.theonair.vertical-audio.input")
 print("Listening to \"\(mic.localizedName)\"" + (camera.map { " and \"\($0.localizedName)\"" } ?? "") + ".")
 Thread.sleep(forTimeInterval: 1.5)
 
@@ -245,9 +311,12 @@ Thread.sleep(forTimeInterval: 1.5)
 
 var offsets: [Double] = []
 var audioLatencies: [Double] = []
+var audioArrivals: [Double] = []
+var halLatencies: [Double] = []
 var videoLatencies: [Double] = []
 for i in 1...count {
     _ = detector.take()
+    _ = tap?.take()
     let before = lastEventTime()
     if trigger {
         notify_post(notificationName)
@@ -256,6 +325,7 @@ for i in 1...count {
     }
     Thread.sleep(forTimeInterval: interval)
     let (flash, beep) = detector.take()
+    let halBeep = tap?.take()
     let t0 = lastEventTime()
     let fresh = t0 != nil && t0 != before
     var line = String(format: "#%d", i)
@@ -264,10 +334,16 @@ for i in 1...count {
         offsets.append(offset)
         line += String(format: "  offset %+.1f ms (by arrival %+.1f ms)", offset, (beep.arrival - flash.arrival) * 1000)
     }
+    if let halBeep = halBeep, fresh, let t0 = t0 {
+        halLatencies.append((halBeep - t0) * 1000)
+        line += String(format: "  HAL input %.1f ms", (halBeep - t0) * 1000)
+    }
     if let beep = beep {
         if fresh, let t0 = t0 {
             audioLatencies.append((beep.pts - t0) * 1000)
-            line += String(format: "  audio %.1f ms", (beep.pts - t0) * 1000)
+            audioArrivals.append((beep.arrival - t0) * 1000)
+            line += String(
+                format: "  audio %.1f ms (buffer arrived %.1f ms)", (beep.pts - t0) * 1000, (beep.arrival - t0) * 1000)
         }
     } else {
         line += "  no beep"
@@ -298,7 +374,9 @@ func summary(_ name: String, _ values: [Double]) {
 }
 print("")
 summary("audio/video offset (+ = sound after image)", offsets)
-summary("OBS -> Vertical Audio", audioLatencies)
+summary("OBS -> Vertical Audio (HAL input time stamps)", halLatencies)
+summary("OBS -> Vertical Audio (AVFoundation time stamps)", audioLatencies)
+summary("OBS -> Vertical Audio (buffer arrival in the app)", audioArrivals)
 summary("OBS -> Vertical Camera", videoLatencies)
 print(String(format: "audio frames %d, video frames %d", detector.audioFrames, detector.videoFrames))
 exit(offsets.isEmpty && audioLatencies.isEmpty ? 1 : 0)
