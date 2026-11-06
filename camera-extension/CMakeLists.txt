@@ -41,15 +41,17 @@ set(VERTICAL_AUDIO_FACTORY_UUID "7FA6C826-F230-4CFF-9B15-92D130BB9B32")
 
 # ---- signing -------------------------------------------------------------------------
 set(CODESIGN_IDENTITY "" CACHE STRING "Signing identity, e.g. 'Developer ID Application: Rise (Apps) (562LS75A65)'")
-set(VERTICAL_CAMERA_PROFILE_HOST
-    ""
-    CACHE STRING
-    "Developer ID provisioning profile of the host app: an installed profile name/UUID or a .provisionprofile path"
+set(
+  VERTICAL_CAMERA_PROFILE_HOST
+  ""
+  CACHE STRING
+  "Developer ID provisioning profile of the host app: an installed profile name/UUID or a .provisionprofile path"
 )
-set(VERTICAL_CAMERA_PROFILE_EXT
-    ""
-    CACHE STRING
-    "Developer ID provisioning profile of the extension: an installed profile name/UUID or a .provisionprofile path"
+set(
+  VERTICAL_CAMERA_PROFILE_EXT
+  ""
+  CACHE STRING
+  "Developer ID provisioning profile of the extension: an installed profile name/UUID or a .provisionprofile path"
 )
 
 # ---- version ----------------------------------------------------------------------------
@@ -131,8 +133,13 @@ set_target_properties(
 )
 target_link_libraries(
   vertical-camera-extension
-  PRIVATE "-framework CoreMediaIO" "-framework CoreMedia" "-framework CoreVideo" "-framework VideoToolbox"
-          "-framework AppKit" "-framework IOKit"
+  PRIVATE
+    "-framework CoreMediaIO"
+    "-framework CoreMedia"
+    "-framework CoreVideo"
+    "-framework VideoToolbox"
+    "-framework AppKit"
+    "-framework IOKit"
 )
 _vertical_camera_signing(vertical-camera-extension "${_gen}/extension.entitlements" "${VERTICAL_CAMERA_PROFILE_EXT}")
 
@@ -156,7 +163,8 @@ add_dependencies(vertical-camera-app vertical-camera-extension)
 add_custom_command(
   TARGET vertical-camera-app
   POST_BUILD
-  COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_BUNDLE_CONTENT_DIR:vertical-camera-app>/Library/SystemExtensions"
+  COMMAND
+    "${CMAKE_COMMAND}" -E make_directory "$<TARGET_BUNDLE_CONTENT_DIR:vertical-camera-app>/Library/SystemExtensions"
   COMMAND
     "${CMAKE_COMMAND}" -E copy_directory "$<TARGET_BUNDLE_DIR:vertical-camera-extension>"
     "$<TARGET_BUNDLE_CONTENT_DIR:vertical-camera-app>/Library/SystemExtensions/$<TARGET_BUNDLE_DIR_NAME:vertical-camera-extension>"

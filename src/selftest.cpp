@@ -2133,8 +2133,8 @@ void measureStart()
 {
 	QFile::remove(measureDoneFile());
 	g_measureSaved = avsync::config();
-	const QString offset = QString::fromUtf8(getenv("VERTICAL_SELFTEST_OFFSET") ? getenv("VERTICAL_SELFTEST_OFFSET")
-										  : "auto");
+	const QString offset =
+		QString::fromUtf8(getenv("VERTICAL_SELFTEST_OFFSET") ? getenv("VERTICAL_SELFTEST_OFFSET") : "auto");
 	avsync::setConfig(offset == QLatin1String("auto") ? avsync::Config{true, 0}
 							  : avsync::Config{false, offset.toInt()});
 	synctest::setRemoteTrigger(true);
