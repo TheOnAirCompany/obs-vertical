@@ -44,6 +44,12 @@ inline void fail(const char *file, int line, const std::string &msg)
 			t::fail(__FILE__, __LINE__, #cond); \
 	} while (0)
 
+#define CHECK_EQ(a, b)                                                                     \
+	do {                                                                                       \
+		if (!((a) == (b)))                                                                 \
+			t::fail(__FILE__, __LINE__, #a " == " #b);                                 \
+	} while (0)
+
 #define CHECK_NEAR(a, b, eps)                                                                              \
 	do {                                                                                               \
 		const double _a = (a), _b = (b);                                                           \
