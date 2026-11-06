@@ -26,8 +26,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *   VERTICAL_SELFTEST=1         run it 1.5 s after OBS finished loading
  *   VERTICAL_SELFTEST_QUIT=1    close OBS when done
  *   VERTICAL_SELFTEST_ONLY=a,b  only these groups: canvas, scenes, gate, record, multistream,
- *                               stream, dock, audio, vaudio, audioshots (multistream needs
- *                               VERTICAL_SELFTEST_RTMP_PORT; audioshots VERTICAL_SELFTEST_SHOTS)
+ *                               stream, dock, audio, vaudio, audioshots, measure (multistream
+ *                               needs VERTICAL_SELFTEST_RTMP_PORT; audioshots
+ *                               VERTICAL_SELFTEST_SHOTS; measure runs only when named)
  *   VERTICAL_SELFTEST_SHOTS=dir screenshots of the dock in Studio and Compact into dir
  *                               (needs VERTICAL_SELFTEST_RTMP_PORT: two more listeners at +3, +4)
  */
@@ -2116,6 +2117,56 @@ void vaudioCheck()
 	virtualaudio::setForced(false);
 }
 
+/* ------------------------------------------------------------------ measurement session */
+
+/* Keeps OBS ready for vertical-sync-measure: remote sync tests on, the virtual camera
+ * started when installed, the offset from VERTICAL_SELFTEST_OFFSET ("auto" or ms).
+ * Ends when $TMPDIR/vertical-measure-done exists or after VERTICAL_SELFTEST_MEASURE_SECS. */
+avsync::Config g_measureSaved;
+
+QString measureDoneFile()
+{
+	return QDir::temp().filePath(QStringLiteral("vertical-measure-done"));
+}
+
+void measureStart()
+{
+	QFile::remove(measureDoneFile());
+	g_measureSaved = avsync::config();
+	const QString offset = QString::fromUtf8(getenv("VERTICAL_SELFTEST_OFFSET") ? getenv("VERTICAL_SELFTEST_OFFSET")
+										  : "auto");
+	avsync::setConfig(offset == QLatin1String("auto") ? avsync::Config{true, 0}
+							  : avsync::Config{false, offset.toInt()});
+	synctest::setRemoteTrigger(true);
+	QString error;
+	const bool cam = O().startVirtualCam(&error);
+	obs_log(LOG_INFO, "[selftest] INFO measure: offset %s, virtual camera %s %s, driver %s",
+		offset.toUtf8().constData(), cam ? "started" : "not started", error.toUtf8().constData(),
+		virtualaudio::stats().installed ? "installed" : "not installed");
+}
+
+void measureReport()
+{
+	const virtualaudio::Stats s = virtualaudio::stats();
+	const core::LatencyInputs in = avsync::inputs();
+	obs_log(LOG_INFO,
+		"[selftest] PERF measure feeding=%d schedule_ms=%.1f underruns=%llu obs_audio_lag_ms=%.1f video_lag_ms=%.1f "
+		"audio_path_ms=%.1f video_path_ms=%.1f default_offset_ms=%d effective_offset_ms=%d audio_delay_ms=%.1f "
+		"video_delay_frames=%d",
+		(int)s.feeding, s.scheduleMs, (unsigned long long)s.underruns, in.obsAudioLagMs, in.videoLagMs,
+		core::audioPathMs(in), core::videoPathMs(in), avsync::defaultOffsetMs(), avsync::effectiveOffsetMs(),
+		avsync::audioDelayMs(), avsync::videoDelayFrames());
+}
+
+void measureStop()
+{
+	measureReport();
+	O().stopVirtualCam();
+	synctest::setRemoteTrigger(false);
+	avsync::setConfig(g_measureSaved);
+	QFile::remove(measureDoneFile());
+}
+
 /* ------------------------------------------------------------------ 0.3 screenshots */
 
 void saveWidgetShot(QWidget *w, const char *file)
@@ -2397,6 +2448,19 @@ void runSelfTest()
 		R->add(4000, [] { audioCollectionOther(); });
 		R->add(5000, [] { audioCollectionBack(); });
 		R->add(200, [] { audioCleanup(); });
+	}
+	if (getenv("VERTICAL_SELFTEST_ONLY") && enabled("measure")) {
+		const char *secs = getenv("VERTICAL_SELFTEST_MEASURE_SECS");
+		R->add(500, [] { measureStart(); });
+		R->waitUntil("measure-session", (secs ? atoi(secs) : 120) * 1000, [] {
+			static uint64_t last = 0;
+			if (os_gettime_ns() - last > 5000000000ull) {
+				last = os_gettime_ns();
+				measureReport();
+			}
+			return QFile::exists(measureDoneFile());
+		});
+		R->add(0, [] { measureStop(); });
 	}
 	if (getenv("VERTICAL_SELFTEST_SHOTS") && enabled("audioshots")) {
 		R->add(200, [] { audioSetup(); });
