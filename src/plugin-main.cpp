@@ -66,10 +66,6 @@ void onFrontendEvent(enum obs_frontend_event event, void *)
 		v.onCollectionReady();
 		vertical::hotkeys::syncDestinations();
 		break;
-	case OBS_FRONTEND_EVENT_CANVAS_REMOVED:
-		if (v.canvas() && obs_canvas_removed(v.canvas()))
-			v.onCollectionCleanup();
-		break;
 	case OBS_FRONTEND_EVENT_EXIT:
 		vertical::Outputs::instance().stopEverything();
 		vertical::hotkeys::unregisterAll();

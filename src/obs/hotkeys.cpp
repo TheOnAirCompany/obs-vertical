@@ -83,9 +83,7 @@ bool destStart(void *data, obs_hotkey_pair_id, obs_hotkey_t *, bool pressed)
 	if (!pressed)
 		return false;
 	const std::string id = *static_cast<std::string *>(data);
-	if (Outputs::instance().destinationStatus(id).state != OutputState::Idle &&
-	    Outputs::instance().destinationStatus(id).state != OutputState::Error)
-		return false;
+	/* Runs on the hotkey thread: all state checks happen on the UI thread. */
 	onUi([id] {
 		QString error;
 		Outputs::instance().startDestination(id, &error);

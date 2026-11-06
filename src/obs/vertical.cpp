@@ -119,6 +119,7 @@ void Vertical::onCollectionChanging()
 {
 	/* Outputs were stopped by the caller; let go of the scene on air before
 	 * the frontend removes every source. */
+	switching_ = true;
 	detachProgram();
 }
 
@@ -140,6 +141,8 @@ void Vertical::onCollectionCleanup()
 
 void Vertical::onCollectionReady()
 {
+	switching_ = false;
+	loaded_ = true; /* also for a new, empty collection (no load callback) */
 	ensureCanvas();
 	emit settingsChanged();
 }
@@ -207,7 +210,9 @@ bool Vertical::ensureCanvas()
 		obs_log(LOG_INFO, "created canvas '%s' %dx%d", name.c_str(), canvasSize().width, canvasSize().height);
 	}
 
+	/* Renames inside a canvas other than the main one are only signalled on the canvas. */
 	signal_handler_connect(obs_canvas_get_signal_handler(canvas_), "remove", canvasRemoveCb, this);
+	signal_handler_connect(obs_canvas_get_signal_handler(canvas_), "source_rename", sourceRenameCb, this);
 
 	if (rawSceneNames().isEmpty())
 		addScene(T("Scene.DefaultName"));
@@ -232,6 +237,7 @@ void Vertical::releaseCanvas()
 	if (!canvas_)
 		return;
 	signal_handler_disconnect(obs_canvas_get_signal_handler(canvas_), "remove", canvasRemoveCb, this);
+	signal_handler_disconnect(obs_canvas_get_signal_handler(canvas_), "source_rename", sourceRenameCb, this);
 	obs_canvas_release(canvas_);
 	canvas_ = nullptr;
 	refreshApiSnapshot();
@@ -652,19 +658,25 @@ void Vertical::onSourceRenamed(obs_source_t *source, const QString &from, const 
 
 void Vertical::onSourceRemoved(obs_source_t *source)
 {
-	if (!loaded_ && !canvas_)
-		return;
 	OBSCanvasAutoRelease owner = obs_source_get_canvas(source);
-	const std::string name = obs_source_get_name(source);
 	if (canvas_ && owner == canvas_) {
 		emit scenesChanged(); /* removeScene() already cleaned the links */
 		return;
 	}
-	/* A main scene was deleted by the user: drop its link. During a collection
-	 * switch every scene is removed; links were saved before, keep them. */
-	if (!loaded_)
+	/* During a collection switch every scene is removed: the links were saved
+	 * with the old collection, keep them. Otherwise a main scene was deleted. */
+	if (switching_ || !loaded_)
 		return;
-	(void)name;
+	OBSCanvasAutoRelease mainCanvas = obs_get_main_canvas();
+	if (owner != mainCanvas)
+		return;
+	bool changed;
+	{
+		std::lock_guard<std::mutex> lock(apiMutex_);
+		changed = settings_.links.unlink(obs_source_get_name(source));
+	}
+	if (changed)
+		emit linksChanged();
 }
 
 } // namespace vertical

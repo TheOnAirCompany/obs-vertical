@@ -110,9 +110,9 @@ private:
 	core::Settings settings_;
 	core::RenderGate gate_;
 	obs_canvas_t *canvas_ = nullptr; /* strong reference */
-	obs_source_t *transition_ = nullptr;
 	bool signalsConnected_ = false;
 	bool loaded_ = false;
+	bool switching_ = false; /* between SCENE_COLLECTION_CHANGING and the new collection */
 
 	mutable std::mutex apiMutex_; /* guards api_ and settings_.links */
 	ApiCanvas api_;
