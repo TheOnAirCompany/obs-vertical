@@ -75,6 +75,13 @@ target_sources(
     src/ui/destination-dialog.hpp
 )
 
+# In-OBS self-test (development only): see docs/ARCHITECTURE.md, "Self-test".
+option(VERTICAL_SELFTEST "Build the in-OBS self-test (development only)" OFF)
+if(VERTICAL_SELFTEST)
+  target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/selftest.cpp)
+  target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE VERTICAL_SELFTEST)
+endif()
+
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
 
 # 9:16 virtual camera output (macOS). It needs the Vertical Camera extension,

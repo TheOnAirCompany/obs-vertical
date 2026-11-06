@@ -21,6 +21,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <plugin-support.h>
 
 #include <QMainWindow>
+#include <QTimer>
+
+#include <cstdlib>
 
 #include "obs/api.hpp"
 #include "obs/hotkeys.hpp"
@@ -43,6 +46,12 @@ MODULE_EXPORT const char *obs_module_name(void)
 {
 	return "Vertical for OBS";
 }
+
+#ifdef VERTICAL_SELFTEST
+namespace vertical {
+void runSelfTest();
+}
+#endif
 
 namespace {
 
@@ -74,6 +83,10 @@ void onFrontendEvent(enum obs_frontend_event event, void *)
 	default:
 		break;
 	}
+#ifdef VERTICAL_SELFTEST
+	if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING && getenv("VERTICAL_SELFTEST"))
+		QTimer::singleShot(1500, [] { vertical::runSelfTest(); });
+#endif
 }
 
 void onSave(obs_data_t *data, bool saving, void *)

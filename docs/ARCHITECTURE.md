@@ -162,3 +162,36 @@ global source signals arrive on other threads and are queued to the UI thread wi
 `QMetaObject::invokeMethod`. The proc handlers (`api.cpp`) read a mutex-protected
 snapshot of the canvas and change links under the same mutex. The preview draw
 callback runs on the graphics thread with a weak reference to the canvas.
+
+## 8. Self-test
+
+`src/selftest.cpp` drives the real plugin inside OBS (canvas, scenes, render gate,
+outputs, encoder pool, public procs). It is compiled only with the CMake option
+`VERTICAL_SELFTEST` (OFF by default, never in a release) and runs only when the
+`VERTICAL_SELFTEST` environment variable is set, 1.5 s after
+`OBS_FRONTEND_EVENT_FINISHED_LOADING`. Use a throwaway profile and scene collection:
+it adds and removes vertical scenes and a destination, and records to a temporary
+folder.
+
+```
+cmake -S . -B build_macos -DVERTICAL_SELFTEST=ON
+cmake --build build_macos --config RelWithDebInfo
+VERTICAL_SELFTEST=1 VERTICAL_SELFTEST_QUIT=1 /Applications/OBS.app/Contents/MacOS/OBS
+```
+
+* `VERTICAL_SELFTEST_QUIT=1` closes OBS when done.
+* `VERTICAL_SELFTEST_ONLY=canvas,scenes,gate,record,stream` runs only those groups.
+
+| Group | What it checks |
+| --- | --- |
+| `canvas` | Canvas exists, base/output size match the settings (1080x1920 by default), `vertical_get_canvas` returns its uuid, name and size, `vertical_link_scene` stores, refuses (unknown scene) and removes a link. |
+| `scenes` | Add a scene with a colour source, make it current, it is on channel 0 while the gate is held, link it; rename it (list, order, current scene and link follow, a taken name is refused); remove it (link dropped, current scene moves, source gone). |
+| `gate` | With the dock preview hidden and no output, channel 0 is empty; a recording puts the current scene on it; it is empty again after the stop. |
+| `record` | 3 s recording of a moving noise image into `$TMPDIR/vertical-selftest`; logs the encoder actually used and checks it is the plugin's choice (hardware when available); the file exists and is over 50 KB. Then recording + replay buffer together share one video encoder and one audio encoder. |
+| `stream` | A destination to `rtmp://127.0.0.1:1/live` (key `test`) reports an error or reconnect state within 8 s, stops, and is removed. |
+
+The log (`~/Library/Application Support/obs-studio/logs`) gets one line per check,
+`[selftest] PASS|FAIL <name> <detail>`, a CPU sample taken during the recording,
+`[selftest] PERF record cpu=… frame_time_ms=… lagged=… canvas_skipped=… encoder=…`,
+and a final `[selftest] DONE pass=N fail=M`. Recordings are left in the temporary
+folder for inspection; the recording settings, dock and current scene are restored.
