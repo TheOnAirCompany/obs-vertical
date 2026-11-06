@@ -131,7 +131,8 @@ target_link_libraries(
 _vertical_camera_signing(vertical-camera-extension "${_gen}/extension.entitlements" "${VERTICAL_CAMERA_PROFILE_EXT}")
 
 # ---- the host app (activates the extension) -----------------------------------------
-add_executable(vertical-camera-app MACOSX_BUNDLE app/main.swift app/App.swift)
+add_executable(vertical-camera-app MACOSX_BUNDLE app/main.swift app/App.swift app/Vertical.icns)
+set_source_files_properties(app/Vertical.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 set_target_properties(
   vertical-camera-app
   PROPERTIES

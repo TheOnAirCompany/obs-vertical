@@ -6,6 +6,8 @@
 	<string>en</string>
 	<key>CFBundleExecutable</key>
 	<string>Vertical Camera</string>
+	<key>CFBundleIconFile</key>
+	<string>Vertical</string>
 	<key>CFBundleIdentifier</key>
 	<string>@VERTICAL_CAMERA_APP_ID@</string>
 	<key>CFBundleInfoDictionaryVersion</key>

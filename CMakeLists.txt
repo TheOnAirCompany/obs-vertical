@@ -101,6 +101,14 @@ if(APPLE AND VERTICAL_VIRTUALCAM)
       "$<LINK_LIBRARY:FRAMEWORK,AppKit.framework>"
   )
 endif()
+if(APPLE)
+  # Bundle icon, shared with Vertical Camera.app (Xcode merges this plist into the generated one).
+  target_add_resource(${CMAKE_PROJECT_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/camera-extension/app/Vertical.icns")
+  set_target_properties(
+    ${CMAKE_PROJECT_NAME}
+    PROPERTIES XCODE_ATTRIBUTE_INFOPLIST_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/macos/plugin-Info.plist"
+  )
+endif()
 if(APPLE AND VERTICAL_BUILD_CAMERA)
   add_subdirectory(camera-extension)
 endif()
