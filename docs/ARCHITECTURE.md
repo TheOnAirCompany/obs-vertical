@@ -195,3 +195,16 @@ The log (`~/Library/Application Support/obs-studio/logs`) gets one line per chec
 `[selftest] PERF record cpu=… frame_time_ms=… lagged=… canvas_skipped=… encoder=…`,
 and a final `[selftest] DONE pass=N fail=M`. Recordings are left in the temporary
 folder for inspection; the recording settings, dock and current scene are restored.
+
+### Real multi-destination streaming (group `multistream`)
+Needs three local RTMP listeners, for example:
+
+```
+for i in 1 2 3; do ffmpeg -listen 1 -i rtmp://127.0.0.1:$((19350+i))/live/test -c copy out$i.flv & done
+VERTICAL_SELFTEST=1 VERTICAL_SELFTEST_ONLY=multistream VERTICAL_SELFTEST_RTMP_PORT=19351 OBS
+```
+
+It starts three destinations at once, waits until all are live, then checks that they share
+one video encoder and send frames without drops, and logs `[selftest] PERF multistream ...`
+(process CPU, lagged frames). Measured on Apple silicon: 3 × 1080x1920 at 30 fps with the
+VideoToolbox hardware encoder, 1.9 % CPU, 0 dropped frames.

@@ -714,6 +714,94 @@ void streamRemove()
 	g.destinationId.clear();
 }
 
+
+/* ------------------------------------------------------------------ multistream */
+/* Real streaming to three local RTMP servers (VERTICAL_SELFTEST_RTMP_PORT = first port of
+ * three listeners, e.g. ffmpeg -listen 1): all live, one shared video encoder, CPU. */
+std::vector<std::string> g_multi;
+
+void multiStart()
+{
+	const int base = atoi(getenv("VERTICAL_SELFTEST_RTMP_PORT"));
+	core::Settings &s = V().settings();
+	for (int i = 0; i < 3; i++) {
+		const std::string id =
+			core::makeId((unsigned long long)QDateTime::currentMSecsSinceEpoch() + i, s.destinationIds());
+		core::Destination d = core::makeDestination(core::Platform::CustomRtmp, id,
+							    "Selftest Local " + std::to_string(i + 1));
+		d.server = "rtmp://127.0.0.1:" + std::to_string(base + i) + "/live";
+		d.streamKey = "test";
+		d.enabled = false;
+		s.destinations.push_back(d);
+		g_multi.push_back(id);
+	}
+	V().settingsEdited();
+	hotkeys::syncDestinations();
+	g.cpu = os_cpu_usage_info_start();
+	g.totalFrames = obs_get_total_frames();
+	g.laggedFrames = obs_get_lagged_frames();
+	g.recordStartNs = os_gettime_ns();
+	for (const std::string &id : g_multi) {
+		QString error;
+		const bool ok = O().startDestination(id, &error);
+		R->check(ok, "multistream-start", QString::fromStdString(id) + " " + error);
+	}
+}
+
+bool multiAllLive()
+{
+	for (const std::string &id : g_multi)
+		if (O().destinationStatus(id).state != OutputState::Live)
+			return false;
+	return !g_multi.empty();
+}
+
+void multiCheck()
+{
+	const double cpu = g.cpu ? os_cpu_usage_info_query(g.cpu) : -1.0;
+	if (g.cpu) {
+		os_cpu_usage_info_destroy(g.cpu);
+		g.cpu = nullptr;
+	}
+	const uint32_t total = obs_get_total_frames() - g.totalFrames;
+	const uint32_t lagged = obs_get_lagged_frames() - g.laggedFrames;
+	std::vector<obs_encoder_t *> encoders;
+	int dropped = 0, frames = 0;
+	for (int i = 0; i < (int)g_multi.size(); i++) {
+		OBSOutputAutoRelease out = outputNamed(("Vertical Selftest Local " + std::to_string(i + 1)).c_str());
+		if (!out)
+			continue;
+		encoders.push_back(obs_output_get_video_encoder(out));
+		dropped += obs_output_get_frames_dropped(out);
+		frames += obs_output_get_total_frames(out);
+	}
+	const bool shared = encoders.size() == 3 && encoders[0] && encoders[0] == encoders[1] &&
+			    encoders[1] == encoders[2];
+	obs_log(LOG_INFO,
+		"[selftest] PERF multistream secs=%.1f cpu=%.1f%% lagged=%u/%u outputs=%zu frames=%d dropped=%d encoder=%s",
+		(double)(os_gettime_ns() - g.recordStartNs) / 1e9, cpu, lagged, total, encoders.size(), frames, dropped,
+		encoders.empty() || !encoders[0] ? "none" : obs_encoder_get_id(encoders[0]));
+	R->check(shared, "multistream-one-shared-video-encoder", O().encoderSummary());
+	R->check(frames > 0 && dropped == 0, "multistream-frames-sent",
+		 QStringLiteral("%1 frames, %2 dropped").arg(frames).arg(dropped));
+	for (const std::string &id : g_multi)
+		O().stopDestination(id);
+}
+
+void multiRemove()
+{
+	core::Settings &s = V().settings();
+	auto &list = s.destinations;
+	list.erase(std::remove_if(list.begin(), list.end(),
+				  [](const core::Destination &d) {
+					  return std::find(g_multi.begin(), g_multi.end(), d.id) != g_multi.end();
+				  }),
+		   list.end());
+	V().settingsEdited();
+	hotkeys::syncDestinations();
+	g_multi.clear();
+}
+
 bool enabled(const char *group)
 {
 	const char *only = getenv("VERTICAL_SELFTEST_ONLY");
@@ -809,6 +897,15 @@ void runSelfTest()
 		R->add(500, [] { poolCheck(); });
 		R->add(0, [] { poolStop(); });
 		R->waitUntil("pool-stopped", 15000, [] { return !O().recordingActive() && !O().replayActive(); });
+		R->add(200, [] { dropRecordScene(); });
+	}
+	if (getenv("VERTICAL_SELFTEST_RTMP_PORT") && enabled("multistream")) {
+		R->add(300, [] { makeRecordScene(); });
+		R->add(500, [] { multiStart(); });
+		R->waitUntil("multistream-all-live", 10000, [] { return multiAllLive(); });
+		R->add(5000, [] { multiCheck(); });
+		R->waitUntil("multistream-stopped", 15000, [] { return !O().anyStreamActive(); });
+		R->add(200, [] { multiRemove(); });
 		R->add(200, [] { dropRecordScene(); });
 	}
 	if (enabled("stream")) {
