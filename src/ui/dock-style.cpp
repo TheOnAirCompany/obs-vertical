@@ -49,7 +49,7 @@ const char *svgBody(const QByteArray &name)
 		{"phone", "<rect x='7' y='2' width='10' height='20' rx='2'/>"},
 		{"note", "<path d='M9 18V5l12-2v13'/><circle cx='6' cy='18' r='3'/><circle cx='18' cy='16' r='3'/>"},
 		{"insta", "<rect x='4' y='4' width='16' height='16' rx='5'/><circle cx='12' cy='12' r='3.5'/>"},
-		/* provisional: glyphs of custom servers and the detached window, same stroke style */
+		/* glyphs of custom servers and the detached window, same stroke style */
 		{"server", "<rect x='3' y='4' width='18' height='7' rx='2'/><rect x='3' y='13' width='18' height='7' "
 			   "rx='2'/><path d='M7 7.5h.01M7 16.5h.01'/>"},
 		{"window", "<rect x='3' y='4' width='18' height='16' rx='2'/><path d='M3 9h18'/>"},

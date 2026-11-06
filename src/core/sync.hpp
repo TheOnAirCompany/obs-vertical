@@ -59,7 +59,7 @@ int clampOffsetMs(int ms);
  * it the faster path waits exactly for the slower one (planSync delays one path only).
  * Hysteresis: once compensating, it stops only below threshold - hysteresis, and moves
  * only by steps of at least hysteresis. */
-constexpr int kAutoThresholdMs = 15; /* provisional */
+constexpr int kAutoThresholdMs = 15;
 constexpr int kAutoHysteresisMs = 5;
 int autoOffsetMs(int predictedMs, int currentMs, int thresholdMs = kAutoThresholdMs,
 		 int hysteresisMs = kAutoHysteresisMs);

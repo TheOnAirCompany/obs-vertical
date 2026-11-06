@@ -56,7 +56,7 @@ constexpr int kChannels = 2;
 constexpr uint64_t kIgnoredChunks = 8;
 constexpr uint64_t kWarmupChunks = 48;
 /* Margin for the wake-up jitter of OBS's audio thread on top of the largest lag seen
- * (provisional: spikes of about 10 ms were measured on a busy Mac). */
+ * (spikes of about 10 ms were measured on a busy Mac). */
 constexpr double kJitterMarginMs = 8.0;
 /* After an underrun the schedule grows by this much. */
 constexpr double kUnderrunStepMs = 3.0;

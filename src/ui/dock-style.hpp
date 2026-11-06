@@ -1,8 +1,8 @@
 #pragma once
 
 /* Visual tokens and small widgets of the Vertical dock. Values come from the
- * design review page (Studio and Compact mocks); the ones the page does not give
- * are marked "provisional". Surfaces follow the active OBS theme (QPalette);
+ * design review page (Studio and Compact mocks) and the review of 7 November 2026.
+ * Surfaces follow the active OBS theme (QPalette);
  * status colours are fixed. */
 
 #include "core/dock-model.hpp"
@@ -25,6 +25,8 @@ constexpr QRgb kAmber = 0xFFE3A748; /* connecting, reconnecting, waiting, beta *
 constexpr QRgb kIdle = 0xFF6B7280;  /* stopped */
 constexpr QRgb kErrorText = 0xFFF08A8D;
 constexpr QRgb kProgramTint = 0x29E5484D; /* rgba(229,72,77,.16) */
+constexpr int kProgramBadgeMinRow = 260;  /* below this row width the PROGRAM badge becomes a dot */
+constexpr int kProgramDot = 7;
 constexpr QRgb kProgramBlue = 0xFF2F5BD3; /* option "blue" of scene-programme */
 constexpr QRgb kViolet = 0xFF8B5CF6;      /* option "violet" of apercu-cadre */
 constexpr QRgb kStopFill = 0xFF4A2427;    /* ■ button of a running output */
@@ -65,18 +67,18 @@ constexpr int kIconSmall = 12;
 constexpr qreal kSmallText = 11.0 / 12.0;
 constexpr qreal kBadgeText = 9.5 / 12.0;
 
-/* provisional: values the review page does not give. */
-constexpr int kPreviewMinHeight = 120;     /* provisional */
-constexpr int kCollapsedBar = 24;          /* provisional: "Show preview" bar when hidden */
-constexpr int kDetachedWidth = 360;        /* provisional: detached preview window */
-constexpr int kDetachedHeight = 640;       /* provisional */
-constexpr int kScenesMinRows = 3;          /* provisional: scene list keeps 3 rows visible */
-constexpr int kCompactDestinationsMax = 4; /* provisional: rows before the list scrolls */
-constexpr int kStudioDestinationsMax = 6;  /* provisional */
-constexpr qreal kLineMix = 0.14;           /* provisional: separator = window mixed with text */
-constexpr qreal kRowMix = 0.06;            /* provisional: list row hover/raised */
-constexpr qreal kRaisedMix = 0.10;         /* provisional: tabs, tiles of custom servers */
-constexpr qreal kMutedMix = 0.42;          /* provisional: secondary text */
+/* Values validated on the review of 7 November 2026. */
+constexpr int kPreviewMinHeight = 120;
+constexpr int kCollapsedBar = 24;   /* "Show preview" bar when hidden */
+constexpr int kDetachedWidth = 360; /* detached preview window */
+constexpr int kDetachedHeight = 640;
+constexpr int kScenesMinRows = 3;          /* scene list keeps 3 rows visible */
+constexpr int kCompactDestinationsMax = 4; /* rows before the list scrolls */
+constexpr int kStudioDestinationsMax = 6;
+constexpr qreal kLineMix = 0.14;   /* separator = window mixed with text */
+constexpr qreal kRowMix = 0.06;    /* list row hover/raised */
+constexpr qreal kRaisedMix = 0.10; /* tabs, tiles of custom servers */
+constexpr qreal kMutedMix = 0.42;  /* secondary text */
 
 } // namespace tokens
 

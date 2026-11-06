@@ -205,11 +205,20 @@ void SceneDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt, const QM
 		right = lr.left() - 6;
 	}
 	if (program && style != decisions::ProgramRow::Blue && style != decisions::ProgramRow::Outline) {
-		const QImage badge = badgeImage(T("Dock.ProgramBadge"), QColor::fromRgba(tokens::kRed), Qt::white,
-						scaledFont(opt.font, tokens::kBadgeText, true), dpr);
-		const QSizeF bs = QSizeF(badge.size()) / dpr;
-		right -= (int)bs.width();
-		p->drawImage(QPointF(right, cy - bs.height() / 2), badge);
+		if (r.width() >= tokens::kProgramBadgeMinRow) {
+			const QImage badge = badgeImage(T("Dock.ProgramBadge"), QColor::fromRgba(tokens::kRed),
+							Qt::white, scaledFont(opt.font, tokens::kBadgeText, true), dpr);
+			const QSizeF bs = QSizeF(badge.size()) / dpr;
+			right -= (int)bs.width();
+			p->drawImage(QPointF(right, cy - bs.height() / 2), badge);
+		} else {
+			/* Narrow column: the name comes first, the badge becomes a red dot. */
+			const qreal d = tokens::kProgramDot;
+			right -= (int)d;
+			p->setPen(Qt::NoPen);
+			p->setBrush(QColor::fromRgba(tokens::kRed));
+			p->drawEllipse(QRectF(right, cy - d / 2, d, d));
+		}
 		right -= 6;
 	}
 

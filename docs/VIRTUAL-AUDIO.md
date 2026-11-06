@@ -94,7 +94,7 @@ the canvas frames share (`src/core/sync.hpp`):
 | the whole chunk must be there | 1024 frames = 21.3 ms |
 | one IO buffer of the feed device | 256 frames = 5.3 ms |
 | CoreAudio calls the IO proc ahead of its output time | `IO lead` (measured: 5.3 ms) |
-| wake-up jitter of OBS's audio thread | 2 + 8 ms (provisional) |
+| wake-up jitter of OBS's audio thread | 2 + 8 ms |
 | driver loopback | 128 frames = 2.7 ms |
 
 The plugin plays the sample stamped `t` at host time `t + schedule`, where
@@ -133,7 +133,7 @@ negative delays the image, for the Vertical Camera + Vertical Audio pair only (V
 streams and recordings are synchronised by OBS's muxers already). Its **default** is
 `video path - audio path` (the "measured mismatch"), from the measured lags (largest audio
 lag, average video lag; typical values until measured), with a threshold: by default a
-mismatch under 15 ms (provisional) is left as it is, so that the latency stays as low as
+mismatch under 15 ms is left as it is, so that the latency stays as low as
 possible; above it the faster path waits for the slower one, and nothing else is added.
 Once compensating it stops below 10 ms and follows the measurements in steps of 5 ms.
 "Default" puts it back. The value is per machine (OBS user config,

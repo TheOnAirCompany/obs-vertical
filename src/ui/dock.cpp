@@ -43,7 +43,7 @@ namespace vertical::ui {
 
 namespace {
 
-/* provisional: values the review page does not give. */
+/* Values validated on the review of 7 November 2026. */
 constexpr int kLineHeight = tokens::kButton + 4;    /* Compact lines hold a 28 px button */
 constexpr int kNarrowOutputs = 380;                 /* below: Start all / Stop all show icons only */
 constexpr int kFooterVersionMin = 600;              /* below: the footer drops the version */

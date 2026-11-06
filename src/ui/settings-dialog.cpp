@@ -36,7 +36,7 @@ namespace vertical::ui {
 
 namespace {
 
-/* provisional: dialog width and layout of the Audio tab (OBS's own settings use
+/* dialog width and layout of the Audio tab (OBS's own settings use
  * plain forms). */
 constexpr int kDialogMinWidth = 600;
 constexpr int kDialogMinHeight = 760; /* the Audio tab and its wrapped notes fit */

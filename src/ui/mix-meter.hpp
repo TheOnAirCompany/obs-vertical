@@ -15,10 +15,10 @@
 namespace vertical::ui {
 
 namespace meter {
-constexpr int kBarThickness = 3; /* provisional: one channel, like OBS's meterThickness */
-constexpr int kChannelGap = 1;   /* provisional */
-constexpr int kMarginTop = 2;    /* provisional: space under the preview */
-constexpr int kRefreshMs = 33;   /* ~30 Hz */
+constexpr int kBarThickness = 3; /* one channel, like OBS's meterThickness */
+constexpr int kChannelGap = 1;
+constexpr int kMarginTop = 2;  /* space under the preview */
+constexpr int kRefreshMs = 33; /* ~30 Hz */
 } // namespace meter
 
 class MixMeter : public QWidget {

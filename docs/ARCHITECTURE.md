@@ -274,5 +274,6 @@ destinations, three lines) below, with a 16 px hysteresis. The ⋯ menu can forc
 Colours follow the OBS theme palette; status colours are fixed (red `#E5484D` live or
 error, amber `#E3A748` connecting or waiting, green `#30A46C` ready, grey stopped).
 Every decision of the design review is a constant in `src/ui/dock-decisions.hpp`;
-values the review did not give are marked `provisional` in `dock-style.hpp`, `dock.cpp`
-and `core/dock-model.hpp`.
+the other sizes (in `dock-style.hpp`, `dock.cpp` and `core/dock-model.hpp`) were validated
+on the review of 7 November 2026. Under 260 px of row width, the PROGRAM badge of the scene
+on air becomes a red dot so that the scene name stays readable.

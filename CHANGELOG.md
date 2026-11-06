@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 — unreleased
+## 0.3.0 — 2026-11-07
 
 Vertical audio.
 
@@ -12,9 +12,10 @@ Vertical audio.
 - **Output meter** of the vertical mix: a thin stereo bar under the dock preview, in Studio and Compact, with the colours of the OBS mixer.
 - Self-test: groups `audio`, `vaudio`, `audioshots` (see docs/ARCHITECTURE.md); macOS driver host test in the core tests.
 - Vertical Camera: frames now reach the apps (format descriptions that match the frames; placeholder drawn without AppKit), and an update over an activated camera replaces the extension without Uninstall / Install or a restart.
+- Dock: in a narrow scene column the PROGRAM badge becomes a red dot, so the scene name stays readable.
 - `vertical-sync-measure` (development tool): measures the audio/video offset and the latencies of the pair in a real app.
 
-## 0.2.0 — unreleased
+## 0.2.0 — not released separately (part of 0.3.0)
 
 Redesigned dock.
 
@@ -31,7 +32,7 @@ Redesigned dock.
 - Self-test: the link menu is opened straight from the dock and used at once (a focus change of the test OBS closed it during the test); Linked scenes switching is checked.
 - Self-test: dock group (layouts, resize, scene click, link menu, recording tab, destination rows: tiles, settings button before ▶, dialog, add TikTok from the dock) and destination rows during real streams.
 
-## 0.1.0 — 2026-11-06
+## 0.1.0 — not released separately (part of 0.3.0)
 
 First version.
 

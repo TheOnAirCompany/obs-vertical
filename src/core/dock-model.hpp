@@ -22,7 +22,7 @@ enum class LayoutChoice { Automatic, Compact, Studio };
 
 /* From the review page: "Compact below ~520 px, Studio above". */
 constexpr int kStudioMinWidth = 520;
-/* provisional: Studio stays until the dock is this much narrower, so a width
+/* Studio stays until the dock is this much narrower, so a width
  * near the threshold does not flip the layout back and forth. */
 constexpr int kModeHysteresis = 16;
 
