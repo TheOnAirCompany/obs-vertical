@@ -50,9 +50,9 @@ TEST("dock: bitrate from byte counters")
 	CHECK_NEAR(kbpsBetween(1000, 1000000000ull, 751000, 2000000000ull), 6000.0, 1e-6);
 	/* Half a second. */
 	CHECK_NEAR(kbpsBetween(0, 1000000000ull, 375000, 1500000000ull), 6000.0, 1e-6);
-	CHECK(kbpsBetween(0, 0, 1000, 1000000000ull) < 0);                   /* first sample */
-	CHECK(kbpsBetween(0, 1000000000ull, 1000, 1000000000ull) < 0);       /* clock did not move */
-	CHECK(kbpsBetween(5000, 1000000000ull, 1000, 2000000000ull) < 0);    /* counter reset */
+	CHECK(kbpsBetween(0, 0, 1000, 1000000000ull) < 0);                            /* first sample */
+	CHECK(kbpsBetween(0, 1000000000ull, 1000, 1000000000ull) < 0);                /* clock did not move */
+	CHECK(kbpsBetween(5000, 1000000000ull, 1000, 2000000000ull) < 0);             /* counter reset */
 	CHECK_NEAR(kbpsBetween(1000, 1000000000ull, 1000, 2000000000ull), 0.0, 1e-9); /* stalled */
 	CHECK_EQ(elapsedSeconds(0, 5000000000ull), 0u);
 	CHECK_EQ(elapsedSeconds(1000000000ull, 755500000000ull), 754u);
