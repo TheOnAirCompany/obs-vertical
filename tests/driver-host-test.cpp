@@ -251,6 +251,35 @@ int main(int argc, char **argv)
 		       get<UInt32>(input, kAudioDevicePropertyClockDomain),
 	       "one clock domain");
 
+	/* coreaudiod drops a device when one property it asks for while adding it is
+	 * unknown: those are answered in every scope. */
+	for (AudioObjectID dev : {input, feed}) {
+		for (AudioObjectPropertyScope scope : {kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyScopeInput,
+						       kAudioObjectPropertyScopeOutput}) {
+			OSStatus st = 0, all = 0;
+			get<UInt32>(dev, kAudioDevicePropertyLatency, scope, &st);
+			all |= st;
+			get<UInt32>(dev, kAudioDevicePropertySafetyOffset, scope, &st);
+			all |= st;
+			UInt32 stereo[2] = {0, 0};
+			UInt32 used = 0;
+			const AudioObjectPropertyAddress pa =
+				addr(kAudioDevicePropertyPreferredChannelsForStereo, scope);
+			all |= I().GetPropertyData(D, dev, 0, &pa, 0, nullptr, sizeof(stereo), &used, stereo);
+			UInt32 size = 0;
+			const AudioObjectPropertyAddress la = addr(kAudioDevicePropertyPreferredChannelLayout, scope);
+			all |= I().GetPropertyDataSize(D, dev, 0, &la, 0, nullptr, &size);
+			std::vector<char> layout(size);
+			all |= I().GetPropertyData(D, dev, 0, &la, 0, nullptr, size, &used, layout.data());
+			const AudioObjectPropertyAddress ca = addr(kAudioObjectPropertyCustomPropertyInfoList, scope);
+			all |= I().GetPropertyDataSize(D, dev, 0, &ca, 0, nullptr, &size);
+			get<CFStringRef>(dev, kAudioDevicePropertyConfigurationApplication, scope, &st);
+			all |= st;
+			EXPECT(all == 0 && stereo[0] == 1 && stereo[1] == 2,
+			       "latency, safety offset, stereo channels, layout, custom properties in every scope");
+		}
+	}
+
 	/* Streams */
 	const AudioObjectID inStream =
 		objects(input, kAudioDevicePropertyStreams, kAudioObjectPropertyScopeInput).at(0);

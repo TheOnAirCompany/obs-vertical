@@ -38,6 +38,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <CoreAudio/AudioServerPlugIn.h>
 #include <mach/mach_time.h>
+#include <os/log.h>
 
 #include <atomic>
 #include <cmath>
@@ -68,6 +69,12 @@ constexpr UInt32 kZeroTimeStampPeriod = 16384;
 constexpr UInt32 kLoopbackFrames = 128;
 /* Same clock domain on both devices: aggregates need no drift correction. */
 constexpr UInt32 kClockDomain = 0x56455254; /* 'VERT' */
+
+os_log_t logger()
+{
+	static os_log_t log = os_log_create("company.theonair.vertical-audio", "driver");
+	return log;
+}
 
 CFStringRef manufacturer()
 {
@@ -172,6 +179,20 @@ OSStatus putArray(UInt32 inDataSize, UInt32 *outDataSize, void *outData, const T
 	return kAudioHardwareNoError;
 }
 
+/* Unknown properties make coreaudiod drop a device: every failure is logged
+ * (log stream --predicate 'subsystem == "company.theonair.vertical-audio"'). */
+void logFailure(const char *what, AudioObjectID object, const AudioObjectPropertyAddress *a, OSStatus status)
+{
+	if (status == kAudioHardwareNoError)
+		return;
+	const UInt32 s = a->mSelector, sc = a->mScope;
+	os_log_error(
+		logger(),
+		"%{public}s object %u '%{public}c%{public}c%{public}c%{public}c' scope '%{public}c%{public}c%{public}c%{public}c' element %u: %d",
+		what, object, (char)(s >> 24), (char)(s >> 16), (char)(s >> 8), (char)s, (char)(sc >> 24),
+		(char)(sc >> 16), (char)(sc >> 8), (char)sc, a->mElement, (int)status);
+}
+
 /* ---------------------------------------------------------------- plug-in object */
 
 bool plugInHas(const AudioObjectPropertyAddress *a)
@@ -187,6 +208,7 @@ bool plugInHas(const AudioObjectPropertyAddress *a)
 	case kAudioPlugInPropertyDeviceList:
 	case kAudioPlugInPropertyTranslateUIDToDevice:
 	case kAudioPlugInPropertyResourceBundle:
+	case kAudioObjectPropertyCustomPropertyInfoList:
 		return true;
 	default:
 		return false;
@@ -214,6 +236,7 @@ OSStatus plugInSize(const AudioObjectPropertyAddress *a, UInt32 *size)
 		*size = 2 * sizeof(AudioObjectID);
 		return 0;
 	case kAudioPlugInPropertyBoxList:
+	case kAudioObjectPropertyCustomPropertyInfoList:
 		*size = 0;
 		return 0;
 	default:
@@ -240,6 +263,7 @@ OSStatus plugInGet(const AudioObjectPropertyAddress *a, UInt32 qualifierSize, co
 	case kAudioPlugInPropertyDeviceList:
 		return putArray(inDataSize, outDataSize, outData, devices, 2);
 	case kAudioPlugInPropertyBoxList:
+	case kAudioObjectPropertyCustomPropertyInfoList:
 		*outDataSize = 0;
 		return 0;
 	case kAudioPlugInPropertyTranslateUIDToBox:
@@ -262,7 +286,7 @@ OSStatus plugInGet(const AudioObjectPropertyAddress *a, UInt32 qualifierSize, co
 
 /* ---------------------------------------------------------------- devices */
 
-bool deviceHas(AudioObjectID device, const AudioObjectPropertyAddress *a)
+bool deviceHas(AudioObjectID, const AudioObjectPropertyAddress *a)
 {
 	switch (a->mSelector) {
 	case kAudioObjectPropertyBaseClass:
@@ -287,12 +311,15 @@ bool deviceHas(AudioObjectID device, const AudioObjectPropertyAddress *a)
 	case kAudioDevicePropertyZeroTimeStampPeriod:
 	case kAudioDevicePropertyClockIsStable:
 	case kAudioDevicePropertyStreams:
-		return true;
+	case kAudioObjectPropertyCustomPropertyInfoList:
+	case kAudioDevicePropertyConfigurationApplication:
+	/* Answered in every scope: coreaudiod asks some of them in the global scope while it
+	 * adds the device, and gives up on the device when one is unknown. */
 	case kAudioDevicePropertyLatency:
 	case kAudioDevicePropertySafetyOffset:
 	case kAudioDevicePropertyPreferredChannelsForStereo:
 	case kAudioDevicePropertyPreferredChannelLayout:
-		return scopeHasStream(device, a->mScope) && a->mScope != kAudioObjectPropertyScopeGlobal;
+		return true;
 	default:
 		return false;
 	}
@@ -322,7 +349,11 @@ OSStatus deviceSize(AudioObjectID device, const AudioObjectPropertyAddress *a, U
 		*size = scopeHasStream(device, a->mScope) ? (UInt32)sizeof(AudioObjectID) : 0;
 		return 0;
 	case kAudioObjectPropertyControlList:
+	case kAudioObjectPropertyCustomPropertyInfoList:
 		*size = 0;
+		return 0;
+	case kAudioDevicePropertyConfigurationApplication:
+		*size = sizeof(CFStringRef);
 		return 0;
 	case kAudioDevicePropertyTransportType:
 	case kAudioDevicePropertyClockDomain:
@@ -385,8 +416,11 @@ OSStatus deviceGet(AudioObjectID device, const AudioObjectPropertyAddress *a, UI
 		return putArray(inDataSize, outDataSize, outData, &stream, scopeHasStream(device, a->mScope) ? 1 : 0);
 	}
 	case kAudioObjectPropertyControlList:
+	case kAudioObjectPropertyCustomPropertyInfoList:
 		*outDataSize = 0;
 		return 0;
+	case kAudioDevicePropertyConfigurationApplication:
+		return put<CFStringRef>(inDataSize, outDataSize, outData, CFSTR("com.apple.audio.AudioMIDISetup"));
 	case kAudioDevicePropertyRelatedDevices:
 		return put<AudioObjectID>(inDataSize, outDataSize, outData, device);
 	case kAudioDevicePropertyTransportType:
@@ -466,6 +500,7 @@ bool streamHas(const AudioObjectPropertyAddress *a)
 	case kAudioStreamPropertyPhysicalFormat:
 	case kAudioStreamPropertyAvailableVirtualFormats:
 	case kAudioStreamPropertyAvailablePhysicalFormats:
+	case kAudioObjectPropertyCustomPropertyInfoList:
 		return true;
 	default:
 		return false;
@@ -486,6 +521,7 @@ OSStatus streamSize(const AudioObjectPropertyAddress *a, UInt32 *size)
 		*size = sizeof(CFStringRef);
 		return 0;
 	case kAudioObjectPropertyOwnedObjects:
+	case kAudioObjectPropertyCustomPropertyInfoList:
 		*size = 0;
 		return 0;
 	case kAudioStreamPropertyIsActive:
@@ -523,6 +559,7 @@ OSStatus streamGet(AudioObjectID stream, const AudioObjectPropertyAddress *a, UI
 		return put<CFStringRef>(inDataSize, outDataSize, outData,
 					input ? CFSTR("Vertical Audio") : CFSTR("Vertical Audio Feed"));
 	case kAudioObjectPropertyOwnedObjects:
+	case kAudioObjectPropertyCustomPropertyInfoList:
 		*outDataSize = 0;
 		return 0;
 	case kAudioStreamPropertyIsActive:
@@ -567,6 +604,7 @@ OSStatus initialize(AudioServerPlugInDriverRef, AudioServerPlugInHostRef host)
 	mach_timebase_info(&timebase);
 	gHostTicksPerFrame = (1000000000.0 / kSampleRate) * (Float64)timebase.denom / (Float64)timebase.numer;
 	ring();
+	os_log(logger(), "Vertical Audio driver initialized");
 	return kAudioHardwareNoError;
 }
 
@@ -642,18 +680,32 @@ OSStatus getPropertyDataSize(AudioServerPlugInDriverRef, AudioObjectID object, p
 {
 	if (!a || !size)
 		return kAudioHardwareIllegalOperationError;
+	OSStatus st = kAudioHardwareBadObjectError;
 	if (object == kObjectPlugIn)
-		return plugInSize(a, size);
-	if (isDevice(object))
-		return deviceHas(object, a) ? deviceSize(object, a, size) : kAudioHardwareUnknownPropertyError;
-	if (isStream(object))
-		return streamSize(a, size);
-	return kAudioHardwareBadObjectError;
+		st = plugInSize(a, size);
+	else if (isDevice(object))
+		st = deviceHas(object, a) ? deviceSize(object, a, size) : kAudioHardwareUnknownPropertyError;
+	else if (isStream(object))
+		st = streamSize(a, size);
+	logFailure("GetPropertyDataSize", object, a, st);
+	return st;
 }
+
+OSStatus getPropertyDataImpl(AudioObjectID object, const AudioObjectPropertyAddress *a, UInt32 qualifierSize,
+			     const void *qualifier, UInt32 inDataSize, UInt32 *outDataSize, void *outData);
 
 OSStatus getPropertyData(AudioServerPlugInDriverRef, AudioObjectID object, pid_t, const AudioObjectPropertyAddress *a,
 			 UInt32 qualifierSize, const void *qualifier, UInt32 inDataSize, UInt32 *outDataSize,
 			 void *outData)
+{
+	const OSStatus st = getPropertyDataImpl(object, a, qualifierSize, qualifier, inDataSize, outDataSize, outData);
+	if (a)
+		logFailure("GetPropertyData", object, a, st);
+	return st;
+}
+
+OSStatus getPropertyDataImpl(AudioObjectID object, const AudioObjectPropertyAddress *a, UInt32 qualifierSize,
+			     const void *qualifier, UInt32 inDataSize, UInt32 *outDataSize, void *outData)
 {
 	if (!a || !outDataSize || (!outData && inDataSize))
 		return kAudioHardwareIllegalOperationError;
