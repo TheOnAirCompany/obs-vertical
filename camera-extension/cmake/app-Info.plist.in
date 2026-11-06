@@ -26,6 +26,8 @@
 	<string>public.app-category.video</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Vertical Camera checks that the camera it installs is visible to the apps.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSHumanReadableCopyright</key>

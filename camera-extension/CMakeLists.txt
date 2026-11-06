@@ -56,7 +56,7 @@ set(
 
 # ---- version ----------------------------------------------------------------------------
 set(VERTICAL_CAMERA_VERSION "0.1.0")
-set(VERTICAL_CAMERA_BUILD "4")
+set(VERTICAL_CAMERA_BUILD "5")
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../buildspec.json")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../buildspec.json" _buildspec)
   string(JSON VERTICAL_CAMERA_VERSION GET "${_buildspec}" version)
@@ -155,7 +155,10 @@ set_target_properties(
     XCODE_ATTRIBUTE_SWIFT_VERSION 5.0
     XCODE_ATTRIBUTE_MACOSX_DEPLOYMENT_TARGET 13.0
 )
-target_link_libraries(vertical-camera-app PRIVATE "-framework AppKit" "-framework SystemExtensions")
+target_link_libraries(
+  vertical-camera-app
+  PRIVATE "-framework AppKit" "-framework SystemExtensions" "-framework AVFoundation"
+)
 add_dependencies(vertical-camera-app vertical-camera-extension)
 
 # Embed the extension: Contents/Library/SystemExtensions/<bundle id>.systemextension.

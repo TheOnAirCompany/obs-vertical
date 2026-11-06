@@ -328,10 +328,19 @@ signing/brand-pkg.sh obs-vertical-camera-0.3.0-macos-universal.pkg vertical-came
 
 ### Updating the camera
 
-macOS can keep a new build of an activated camera extension pending until a reboot,
-with no camera in the apps meanwhile. The host app therefore first lists the installed
-builds (`propertiesRequest`): when another build is enabled it deactivates it, then
-activates the bundled one; an activation that would only complete after a reboot falls
-back to the same sequence once. The package's postinstall runs
-`Vertical Camera.app --install --quit-when-done` as the logged-in user when a camera is
-already activated, so an update needs no manual Uninstall / Install.
+When the app is replaced over an activated camera, macOS swaps the extension build by
+itself, but the camera then disappears from the apps until a reboot (seen on macOS 27:
+new build "activated enabled", old one "waiting to uninstall on reboot", no device).
+What works is a real deactivation followed by a new activation. So `--install`:
+
+1. lists the installed builds (`propertiesRequest`); an enabled build other than the
+   bundled one is deactivated first;
+2. activates the bundled build (the user may have to approve it);
+3. waits up to 10 s for the "Vertical Camera" device (AVFoundation discovery) and shows
+   "Ready" only once apps can see it;
+4. if it does not appear, or the activation would wait for a reboot: deactivates and
+   activates again, once; still missing: asks for a restart.
+
+The package's postinstall runs `Vertical Camera.app --install --quit-when-done` (a new
+instance, `open -n`) as the logged-in user when a camera is already activated, so an
+update needs no manual Uninstall / Install.
