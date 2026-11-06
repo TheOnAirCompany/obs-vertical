@@ -387,7 +387,7 @@ QWidget *SettingsDialog::buildAudioTab()
 	const avsync::Config cfg = avsync::config();
 	initialSync_ = cfg;
 	offsetAutomatic_ = cfg.automatic;
-	offset_->setValue(cfg.automatic ? avsync::defaultOffsetMs() : cfg.offsetMs);
+	offset_->setValue(cfg.automatic ? avsync::effectiveOffsetMs() : cfg.offsetMs);
 	connect(offset_, &QSpinBox::valueChanged, this, [this] {
 		if (updatingOffset_)
 			return;
@@ -397,7 +397,7 @@ QWidget *SettingsDialog::buildAudioTab()
 	connect(offsetDefault_, &QPushButton::clicked, this, [this] {
 		offsetAutomatic_ = true;
 		updatingOffset_ = true;
-		offset_->setValue(avsync::defaultOffsetMs());
+		offset_->setValue(avsync::effectiveOffsetMs());
 		updatingOffset_ = false;
 		updateOffsetNote();
 	});
@@ -457,7 +457,7 @@ void SettingsDialog::refreshAudioStatus()
 		QStringLiteral("<b>%1</b> · %2").arg(T("Audio.Microphone").toHtmlEscaped(), text.toHtmlEscaped()));
 	if (offsetAutomatic_) {
 		updatingOffset_ = true;
-		offset_->setValue(avsync::defaultOffsetMs());
+		offset_->setValue(avsync::effectiveOffsetMs());
 		updatingOffset_ = false;
 	}
 	updateOffsetNote();
@@ -468,9 +468,11 @@ void SettingsDialog::updateOffsetNote()
 	const bool measured = avsync::audioMeasured() || avsync::videoMeasured();
 	const int d = avsync::defaultOffsetMs();
 	const QString value = (d > 0 ? QStringLiteral("+") : QString()) + QString::number(d);
-	offsetNote_->setText(
-		T("Audio.OffsetNote").arg(value).arg(measured ? T("Audio.OffsetMeasured") : T("Audio.OffsetEstimated")) +
-		(offsetAutomatic_ ? QStringLiteral(" ") + T("Audio.OffsetAutomatic") : QString()));
+	offsetNote_->setText(T("Audio.OffsetNote")
+				     .arg(value)
+				     .arg(core::kAutoThresholdMs)
+				     .arg(measured ? T("Audio.OffsetMeasured") : T("Audio.OffsetEstimated")) +
+			     (offsetAutomatic_ ? QStringLiteral(" ") + T("Audio.OffsetAutomatic") : QString()));
 	offsetDefault_->setEnabled(!offsetAutomatic_);
 }
 

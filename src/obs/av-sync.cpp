@@ -16,13 +16,10 @@ namespace {
 constexpr const char *kSection = "Vertical";
 constexpr const char *kKeyAuto = "SyncOffsetAuto";
 constexpr const char *kKeyOffset = "SyncOffsetMs";
-/* In automatic mode the offset follows the measurements, but only by steps of at
- * least this much: every change moves the audio a little. */
-constexpr int kAutoHysteresisMs = 5;
 
 std::mutex g_lock; /* guards the trackers */
 core::LagTracker g_audio(0.02);
-core::LagTracker g_video(0.05);
+core::LagAverage g_video(0.05); /* the typical frame lag, not its peaks */
 std::atomic<double> g_audioLag{-1.0};
 std::atomic<double> g_videoLag{-1.0};
 
@@ -120,11 +117,9 @@ int effectiveOffsetMs()
 	const Config c = config();
 	if (!c.automatic)
 		return c.offsetMs;
-	const int d = defaultOffsetMs();
-	if (!g_effectiveSet || std::abs(d - g_effective.load()) >= kAutoHysteresisMs) {
-		g_effective = d;
-		g_effectiveSet = true;
-	}
+	const int current = g_effectiveSet ? g_effective.load() : 0;
+	g_effective = core::autoOffsetMs(defaultOffsetMs(), current);
+	g_effectiveSet = true;
 	return g_effective.load();
 }
 

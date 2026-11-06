@@ -1,6 +1,7 @@
 #include "sync.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cmath>
 
 namespace vertical::core {
@@ -29,6 +30,18 @@ int clampOffsetMs(int ms)
 int defaultOffsetMs(const LatencyInputs &in)
 {
 	return clampOffsetMs((int)std::lround(videoPathMs(in) - audioPathMs(in)));
+}
+
+int autoOffsetMs(int predictedMs, int currentMs, int thresholdMs, int hysteresisMs)
+{
+	predictedMs = clampOffsetMs(predictedMs);
+	const int magnitude = std::abs(predictedMs);
+	if (currentMs == 0)
+		return magnitude >= thresholdMs ? predictedMs : 0;
+	/* Compensating: stop below the threshold minus the hysteresis, else follow. */
+	if (magnitude < thresholdMs - hysteresisMs)
+		return 0;
+	return std::abs(predictedMs - currentMs) >= hysteresisMs ? predictedMs : currentMs;
 }
 
 SyncPlan planSync(int offsetMs, double fps)

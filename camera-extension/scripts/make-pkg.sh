@@ -3,7 +3,9 @@
 # /Applications (macOS activates camera extensions only from there) and the signed
 # VerticalAudio.driver into /Library/Audio/Plug-Ins/HAL (where coreaudiod loads audio
 # drivers). Neither component is relocatable. A postinstall script restarts coreaudiod
-# so that "Vertical Audio" appears at once (the Mac's sound stops for about a second).
+# so that "Vertical Audio" appears at once (the Mac's sound stops for about a second);
+# on an update over an activated camera, another one has Vertical Camera.app replace
+# the extension.
 # The product is signed with the Developer ID Installer identity, notarized and stapled.
 #
 #   camera-extension/scripts/make-pkg.sh "build_camera/Release/Vertical Camera.app" \
@@ -38,11 +40,25 @@ component() { # <root> <plist out>
   plutil -replace 0.BundleOverwriteAction -string upgrade $2
 }
 
-# 1. The camera app.
-mkdir -p $work/camera
+# 1. The camera app. Over an activated camera (an update), the app replaces the extension
+#    itself (old build out, new build in), so the camera does not vanish until a reboot.
+mkdir -p $work/camera $work/camera-scripts
 ditto "$app" "$work/camera/${app:t}"
 component $work/camera $work/camera.plist
-pkgbuild --root $work/camera --component-plist $work/camera.plist \
+cat > $work/camera-scripts/postinstall <<'SH'
+#!/bin/sh
+# Update over an activated Vertical Camera: let Vertical Camera.app swap the extension.
+if /usr/bin/systemextensionsctl list 2>/dev/null | grep -q "company.theonair.vertical-camera.extension.*activated enabled"; then
+  user=$(stat -f %Su /dev/console)
+  if [ -n "$user" ] && [ "$user" != root ]; then
+    launchctl asuser "$(id -u "$user")" sudo -u "$user" \
+      open -a "/Applications/Vertical Camera.app" --args --install --quit-when-done || true
+  fi
+fi
+exit 0
+SH
+chmod 755 $work/camera-scripts/postinstall
+pkgbuild --root $work/camera --component-plist $work/camera.plist --scripts $work/camera-scripts \
   --identifier "$app_id.pkg" --version "$version" --install-location /Applications \
   $work/camera.pkg >/dev/null
 

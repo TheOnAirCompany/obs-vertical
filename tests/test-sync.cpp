@@ -226,3 +226,47 @@ TEST("loopback ring: reads what was written at the same sample time, once")
 	ring.readAndClear(0, bigOut.data(), 2000);
 	CHECK_EQ(bigOut[2 * 1999], 0.0f);
 }
+
+TEST("sync: automatic offset compensates only a real mismatch")
+{
+	/* Aligned within the threshold: nothing added, latency stays low. */
+	CHECK_EQ(autoOffsetMs(0, 0), 0);
+	CHECK_EQ(autoOffsetMs(14, 0), 0);
+	CHECK_EQ(autoOffsetMs(-14, 0), 0);
+	/* Above it: the whole mismatch, in either direction. */
+	CHECK_EQ(autoOffsetMs(15, 0), 15);
+	CHECK_EQ(autoOffsetMs(-21, 0), -21);
+	/* Compensating: small moves are ignored, larger ones followed. */
+	CHECK_EQ(autoOffsetMs(-23, -21), -21);
+	CHECK_EQ(autoOffsetMs(-27, -21), -27);
+	/* It keeps compensating down to threshold - hysteresis, then stops. */
+	CHECK_EQ(autoOffsetMs(15, 18), 18);
+	CHECK_EQ(autoOffsetMs(12, 18), 12);
+	CHECK_EQ(autoOffsetMs(11, 18), 11);
+	CHECK_EQ(autoOffsetMs(9, 18), 0);
+	CHECK_EQ(autoOffsetMs(-9, -18), 0);
+	/* Clamped like the setting. */
+	CHECK_EQ(autoOffsetMs(9000, 0), kMaxOffsetMs);
+	/* The smallest added latency: only the faster path waits, by the difference. */
+	const SyncPlan p = planSync(autoOffsetMs(-21, 0), 30.0);
+	CHECK_EQ(p.videoDelayFrames, 1);
+	CHECK_NEAR(p.audioDelayMs, 33.333 - 21.0, 0.01);
+	const SyncPlan q = planSync(autoOffsetMs(20, 0), 30.0);
+	CHECK_EQ(q.videoDelayFrames, 0);
+	CHECK_NEAR(q.audioDelayMs, 20.0, 1e-9);
+}
+
+TEST("sync: lag average follows the typical value")
+{
+	LagAverage a(0.5);
+	CHECK(!a.valid());
+	a.add(40.0);
+	CHECK_NEAR(a.value(), 40.0, 1e-9);
+	a.add(60.0);
+	CHECK_NEAR(a.value(), 50.0, 1e-9);
+	for (int i = 0; i < 50; i++)
+		a.add(30.0);
+	CHECK_NEAR(a.value(), 30.0, 1e-6);
+	a.reset();
+	CHECK(!a.valid());
+}

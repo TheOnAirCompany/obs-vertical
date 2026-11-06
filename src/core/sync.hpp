@@ -54,6 +54,16 @@ int defaultOffsetMs(const LatencyInputs &in);
 
 int clampOffsetMs(int ms);
 
+/* Automatic offset. Compensating costs latency (one path waits for the other), so
+ * nothing is compensated while the predicted mismatch stays under the threshold; above
+ * it the faster path waits exactly for the slower one (planSync delays one path only).
+ * Hysteresis: once compensating, it stops only below threshold - hysteresis, and moves
+ * only by steps of at least hysteresis. */
+constexpr int kAutoThresholdMs = 15; /* provisional */
+constexpr int kAutoHysteresisMs = 5;
+int autoOffsetMs(int predictedMs, int currentMs, int thresholdMs = kAutoThresholdMs,
+		 int hysteresisMs = kAutoHysteresisMs);
+
 /* How an offset is applied: the image is delayed by whole frames (frames are queued,
  * never copied), the audio by the rest (reads further back in its ring), so the net
  * shift is exact to the sample. */
@@ -62,6 +72,29 @@ struct SyncPlan {
 	int videoDelayFrames = 0;
 };
 SyncPlan planSync(int offsetMs, double fps);
+
+/* Exponential moving average, for lags whose typical value matters (video). */
+class LagAverage {
+public:
+	explicit LagAverage(double alpha = 0.05) : alpha_(alpha) {}
+	void add(double ms)
+	{
+		value_ = valid_ ? value_ + alpha_ * (ms - value_) : ms;
+		valid_ = true;
+	}
+	bool valid() const { return valid_; }
+	double value() const { return value_; }
+	void reset()
+	{
+		valid_ = false;
+		value_ = 0.0;
+	}
+
+private:
+	double alpha_;
+	double value_ = 0.0;
+	bool valid_ = false;
+};
 
 /* Simple running maximum with a slow release, for lags measured on every chunk or
  * frame: rises at once, falls by `releasePerSample` ms per sample. */

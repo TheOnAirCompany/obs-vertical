@@ -56,7 +56,7 @@ set(
 
 # ---- version ----------------------------------------------------------------------------
 set(VERTICAL_CAMERA_VERSION "0.1.0")
-set(VERTICAL_CAMERA_BUILD "3")
+set(VERTICAL_CAMERA_BUILD "4")
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../buildspec.json")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../buildspec.json" _buildspec)
   string(JSON VERTICAL_CAMERA_VERSION GET "${_buildspec}" version)

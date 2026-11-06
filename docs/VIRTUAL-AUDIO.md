@@ -93,15 +93,35 @@ the canvas frames share (`src/core/sync.hpp`):
 | OBS hands a mixed chunk to the plugin | `lag` after the chunk ends (measured: the largest seen) |
 | the whole chunk must be there | 1024 frames = 21.3 ms |
 | one IO buffer of the feed device | 256 frames = 5.3 ms |
-| thread wake-up margin | 2 ms |
+| CoreAudio calls the IO proc ahead of its output time | `IO lead` (measured: 5.3 ms) |
+| wake-up jitter of OBS's audio thread | 2 + 8 ms (provisional) |
 | driver loopback | 128 frames = 2.7 ms |
 
 The plugin plays the sample stamped `t` at host time `t + schedule`, where
-`schedule = lag + 21.3 + 5.3 + 2` ms is the shortest that never runs dry; an underrun
-adds 1 ms. So the audio latency is **fixed and known**. Measured from the moment OBS
-hands a chunk over, its samples reach the microphone 10 ms (first sample) to 31 ms (last
-sample) later: within the 30-40 ms target. Measured from the OBS timestamp, add the OBS
-buffering (`lag`, a few ms to a few tens of ms depending on the sources).
+`schedule = lag + 21.3 + 5.3 + IO lead + 10` ms is the shortest that never runs dry. The
+feed plays silence for its first second while it learns `lag`; an underrun (should not
+happen) adds 3 ms. So the audio latency is **fixed and known**.
+
+Underruns, found on a real Mac: the first version ignored the IO lead (the audio must be
+in the ring when CoreAudio calls the IO proc, 5.3 ms before the output time) and had a
+2 ms margin against OBS's audio thread, whose chunks sometimes arrive 10 ms later than
+usual on a busy Mac: 4-5 underruns (clicks) in 30 s. With the lead measured and the
+margin above: 0 underruns over 10-test runs.
+
+Measured end to end on an Apple silicon Mac (OBS 33.0.1, 30 fps, `vertical-sync-measure`,
+10 tests each, time stamps of the "Vertical Audio" input and of the camera frames):
+
+| | offset 0 | automatic offset |
+| --- | --- | --- |
+| OBS timestamp → Vertical Audio | 68.7 ms | 77.8 ms |
+| OBS timestamp → Vertical Camera | 37.0 ms | 73.3 ms |
+| audio − image (median) | +31.9 ms | +4.3 ms |
+| underruns | 0 | 0 |
+
+Of the audio path, about 24 ms is OBS's own audio buffering (`lag`, which depends on the
+sources and varies from run to run, 5 to 33 ms seen); from the moment OBS hands a chunk
+over, its samples reach the microphone 23 to 45 ms later. The model predicted both paths
+within a millisecond (audio 61.0 measured 61.0, video 43.3 measured 43.0 in one run).
 
 | Video path (OBS timestamp to Vertical Camera clients) | |
 | --- | --- |
@@ -111,9 +131,12 @@ buffering (`lag`, a few ms to a few tens of ms depending on the sources).
 **Offset** (Settings > Audio, "Audio/video offset (ms)"): positive delays the audio,
 negative delays the image, for the Vertical Camera + Vertical Audio pair only (Vertical's
 streams and recordings are synchronised by OBS's muxers already). Its **default** is
-`video path - audio path`, from the measured lags (typical values until measured): by
-default both arrive together. "Default" puts it back; while the default is in use it
-follows the measurements in steps of 5 ms. The value is per machine (OBS user config,
+`video path - audio path` (the "measured mismatch"), from the measured lags (largest audio
+lag, average video lag; typical values until measured), with a threshold: by default a
+mismatch under 15 ms (provisional) is left as it is, so that the latency stays as low as
+possible; above it the faster path waits for the slower one, and nothing else is added.
+Once compensating it stops below 10 ms and follows the measurements in steps of 5 ms.
+"Default" puts it back. The value is per machine (OBS user config,
 `[Vertical] SyncOffsetMs`, `SyncOffsetAuto`), not per collection.
 
 How an offset is applied, near-zero CPU:

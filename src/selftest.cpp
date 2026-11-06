@@ -2010,8 +2010,9 @@ void audioOffsetPlan()
 	R->check(avsync::videoDelayFrames() == 0 && std::fabs(avsync::audioDelayMs() - 40.0) < 0.01,
 		 "sync-offset-positive-delays-audio");
 	avsync::setConfig({true, 0});
-	R->check(avsync::effectiveOffsetMs() == avsync::defaultOffsetMs(), "sync-offset-automatic-uses-default",
-		 QStringLiteral("%1 ms").arg(avsync::defaultOffsetMs()));
+	const int predicted = avsync::defaultOffsetMs();
+	R->check(avsync::effectiveOffsetMs() == core::autoOffsetMs(predicted, 0), "sync-offset-automatic-threshold",
+		 QStringLiteral("mismatch %1 ms -> offset %2 ms").arg(predicted).arg(avsync::effectiveOffsetMs()));
 }
 
 /* Exclusions belong to the scene collection; the offset to the machine. */

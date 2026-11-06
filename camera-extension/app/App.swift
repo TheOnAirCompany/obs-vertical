@@ -11,23 +11,78 @@ import SystemExtensions
 
 let extensionIdentifier = "company.theonair.vertical-camera.extension"
 
+/// Installs, updates and removes the camera extension.
+///
+/// Updating over an activated extension: macOS may keep the new build pending until a
+/// reboot (the old one stays loaded and the camera disappears from the apps). So an
+/// install first asks which builds are installed; when another build is enabled it is
+/// deactivated first, then the bundled one is activated. An activation that would only
+/// complete after a reboot falls back to the same deactivate + activate, once.
 final class ExtensionManager: NSObject, OSSystemExtensionRequestDelegate {
     var onStatus: ((String) -> Void)?
+    var onFinished: ((Bool) -> Void)?
+
+    private enum Step {
+        case idle, inspecting, removingOld, installing, uninstalling
+    }
+    private var step = Step.idle
+    private var fellBack = false
+
+    /// Version of the extension embedded in this app ("0.3.0 (3)").
+    let bundledVersion: (short: String, build: String) = {
+        let url = Bundle.main.bundleURL.appendingPathComponent(
+            "Contents/Library/SystemExtensions/\(extensionIdentifier).systemextension")
+        let info = Bundle(url: url)?.infoDictionary ?? [:]
+        return (info["CFBundleShortVersionString"] as? String ?? "?", info["CFBundleVersion"] as? String ?? "?")
+    }()
 
     func activate() {
-        let request = OSSystemExtensionRequest.activationRequest(
+        fellBack = false
+        step = .inspecting
+        onStatus?("Checking the installed camera...")
+        let request = OSSystemExtensionRequest.propertiesRequest(
             forExtensionWithIdentifier: extensionIdentifier, queue: .main)
         request.delegate = self
-        onStatus?("Installing...")
         OSSystemExtensionManager.shared.submitRequest(request)
     }
 
     func deactivate() {
+        step = .uninstalling
+        submitDeactivation()
+        onStatus?("Uninstalling...")
+    }
+
+    private func submitActivation() {
+        step = .installing
+        onStatus?("Installing \(bundledVersion.short) (\(bundledVersion.build))...")
+        let request = OSSystemExtensionRequest.activationRequest(
+            forExtensionWithIdentifier: extensionIdentifier, queue: .main)
+        request.delegate = self
+        OSSystemExtensionManager.shared.submitRequest(request)
+    }
+
+    private func submitDeactivation() {
         let request = OSSystemExtensionRequest.deactivationRequest(
             forExtensionWithIdentifier: extensionIdentifier, queue: .main)
         request.delegate = self
-        onStatus?("Uninstalling...")
         OSSystemExtensionManager.shared.submitRequest(request)
+    }
+
+    func request(_ request: OSSystemExtensionRequest, foundProperties properties: [OSSystemExtensionProperties]) {
+        guard step == .inspecting else { return }
+        let older = properties.filter {
+            $0.isEnabled && !$0.isUninstalling
+                && ($0.bundleVersion != bundledVersion.build || $0.bundleShortVersion != bundledVersion.short)
+        }
+        if let old = older.first {
+            step = .removingOld
+            onStatus?(
+                "Updating the camera from \(old.bundleShortVersion) (\(old.bundleVersion)): removing the old version..."
+            )
+            submitDeactivation()
+        } else {
+            submitActivation()
+        }
     }
 
     func request(
@@ -44,18 +99,48 @@ final class ExtensionManager: NSObject, OSSystemExtensionRequestDelegate {
     }
 
     func request(_ request: OSSystemExtensionRequest, didFinishWithResult result: OSSystemExtensionRequest.Result) {
-        switch result {
-        case .completed:
-            onStatus?("Done. Restart the apps that use cameras to see the change.")
-        case .willCompleteAfterReboot:
-            onStatus?("Done. Restart the Mac to complete.")
-        @unknown default:
-            onStatus?("Done.")
+        switch step {
+        case .removingOld:
+            // The old build is gone (or goes at the next reboot): install ours now.
+            submitActivation()
+        case .installing where result == .willCompleteAfterReboot && !fellBack:
+            fellBack = true
+            step = .removingOld
+            onStatus?("The update would wait for a restart: removing the old version first...")
+            submitDeactivation()
+        case .installing:
+            step = .idle
+            if result == .completed {
+                onStatus?(
+                    "Vertical Camera \(bundledVersion.short) (\(bundledVersion.build)) is installed. Restart the apps that use cameras to see the change."
+                )
+            } else {
+                onStatus?("Installed. Restart the Mac to complete.")
+            }
+            onFinished?(true)
+        case .uninstalling:
+            step = .idle
+            onStatus?(result == .completed ? "Uninstalled." : "Uninstalled. Restart the Mac to complete.")
+            onFinished?(true)
+        default:
+            break
         }
     }
 
     func request(_ request: OSSystemExtensionRequest, didFailWithError error: Error) {
         let nsError = error as NSError
+        // Nothing to remove (first install): go on with the activation.
+        if step == .removingOld && nsError.domain == OSSystemExtensionErrorDomain
+            && nsError.code == OSSystemExtensionError.extensionNotFound.rawValue
+        {
+            submitActivation()
+            return
+        }
+        if step == .inspecting {
+            submitActivation()
+            return
+        }
+        step = .idle
         var message = "Failed: \(nsError.localizedDescription) (code \(nsError.code))."
         if nsError.domain == OSSystemExtensionErrorDomain
             && nsError.code == OSSystemExtensionError.unsupportedParentBundleLocation.rawValue
@@ -63,6 +148,7 @@ final class ExtensionManager: NSObject, OSSystemExtensionRequestDelegate {
             message = "Move Vertical Camera.app to the Applications folder, then try again."
         }
         onStatus?(message)
+        onFinished?(false)
     }
 }
 
@@ -120,7 +206,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // "Vertical Camera.app --install" / "--uninstall": used by the .pkg postinstall
         // script and by the OBS plugin ("Install the camera" button).
+        // "--quit-when-done": the package's postinstall updates the camera, then the app
+        // goes away by itself.
         let args = CommandLine.arguments
+        if args.contains("--quit-when-done") {
+            manager.onFinished = { _ in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4) { NSApp.terminate(nil) }
+            }
+        }
         if args.contains("--install") {
             manager.activate()
         } else if args.contains("--uninstall") {

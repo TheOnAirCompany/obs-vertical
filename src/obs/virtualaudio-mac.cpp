@@ -50,10 +50,16 @@ namespace {
 
 constexpr int kRate = core::kSyncSampleRate;
 constexpr int kChannels = 2;
-/* The first chunks after a start can be late (OBS just connected us): not a lag. */
-constexpr uint64_t kWarmupChunks = 8;
+/* The feed plays silence for about a second after a start while it learns how late
+ * OBS hands the chunks over; the very first chunks are not counted (OBS just connected
+ * us and may deliver them in a burst). */
+constexpr uint64_t kIgnoredChunks = 8;
+constexpr uint64_t kWarmupChunks = 48;
+/* Margin for the wake-up jitter of OBS's audio thread on top of the largest lag seen
+ * (provisional: spikes of about 10 ms were measured on a busy Mac). */
+constexpr double kJitterMarginMs = 8.0;
 /* After an underrun the schedule grows by this much. */
-constexpr double kUnderrunStepMs = 1.0;
+constexpr double kUnderrunStepMs = 3.0;
 
 struct Feed {
 	core::TimedRing ring{65536, kChannels, kRate};
@@ -74,6 +80,9 @@ struct Feed {
 	std::atomic<double> scheduleMs{0.0};
 	std::atomic<uint64_t> underruns{0};
 	std::atomic<uint64_t> chunks{0};
+	/* How far ahead of its output time CoreAudio calls the IO proc: the audio must be in
+	 * the ring by then, not by the output time. */
+	std::atomic<double> maxLeadMs{0.0};
 	double maxLagMs = 0.0; /* OBS audio thread only */
 };
 
@@ -119,12 +128,12 @@ void mixCallback(void *, size_t, struct audio_data *data)
 	const uint64_t chunk = g.chunks.fetch_add(1) + 1;
 	const uint64_t end = data->timestamp + (uint64_t)data->frames * 1000000000ull / kRate;
 	const double lagMs = (double)(int64_t)(now - end) / 1e6;
-	if (chunk > kWarmupChunks && lagMs > g.maxLagMs)
+	if (chunk > kIgnoredChunks && lagMs > g.maxLagMs)
 		g.maxLagMs = lagMs;
-	if (chunk > kWarmupChunks) {
+	if (chunk > kIgnoredChunks) {
 		core::LatencyInputs in;
 		in.obsAudioLagMs = g.maxLagMs;
-		const double needed = core::audioScheduleMs(in);
+		const double needed = core::audioScheduleMs(in) + g.maxLeadMs.load() + kJitterMarginMs;
 		if (needed > g.scheduleMs.load())
 			g.scheduleMs = needed;
 		/* What the alignment uses: the lag the schedule actually covers. */
@@ -140,9 +149,20 @@ void mixCallback(void *, size_t, struct audio_data *data)
 		g.haveAudio.store(true, std::memory_order_release);
 }
 
-OSStatus ioProc(AudioObjectID, const AudioTimeStamp *, const AudioBufferList *, const AudioTimeStamp *,
+void storeMax(std::atomic<double> &a, double v)
+{
+	double cur = a.load();
+	while (v > cur && !a.compare_exchange_weak(cur, v)) {
+	}
+}
+
+OSStatus ioProc(AudioObjectID, const AudioTimeStamp *now, const AudioBufferList *, const AudioTimeStamp *,
 		AudioBufferList *out, const AudioTimeStamp *outputTime, void *)
 {
+	if (now && outputTime && (now->mFlags & kAudioTimeStampHostTimeValid) &&
+	    (outputTime->mFlags & kAudioTimeStampHostTimeValid) && outputTime->mHostTime > now->mHostTime)
+		storeMax(g.maxLeadMs,
+			 (double)AudioConvertHostTimeToNanos(outputTime->mHostTime - now->mHostTime) / 1e6);
 	if (!out || !out->mNumberBuffers)
 		return noErr;
 	AudioBuffer &buf = out->mBuffers[0];
@@ -186,8 +206,11 @@ void stopFeed()
 	g.haveAudio = false;
 	if (g.timer)
 		g.timer->stop();
-	obs_log(LOG_INFO, "vertical audio: feed stopped (%llu chunks, %llu underruns, schedule %.1f ms)",
-		(unsigned long long)g.chunks.load(), (unsigned long long)g.underruns.load(), g.scheduleMs.load());
+	obs_log(LOG_INFO,
+		"vertical audio: feed stopped (%llu chunks, %llu underruns, schedule %.1f ms: OBS lag %.1f ms, "
+		"IO lead %.1f ms)",
+		(unsigned long long)g.chunks.load(), (unsigned long long)g.underruns.load(), g.scheduleMs.load(),
+		g.maxLagMs, g.maxLeadMs.load());
 }
 
 bool startFeed()
@@ -202,6 +225,7 @@ bool startFeed()
 	g.underruns = 0;
 	g.chunks = 0;
 	g.maxLagMs = 0.0;
+	g.maxLeadMs = 0.0;
 
 	/* Smallest stable IO buffer: the feed device is ours alone. */
 	AudioObjectPropertyAddress a = {kAudioDevicePropertyBufferFrameSize, kAudioObjectPropertyScopeGlobal,

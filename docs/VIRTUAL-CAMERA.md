@@ -317,4 +317,21 @@ signing/brand-pkg.sh obs-vertical-camera-0.3.0-macos-universal.pkg vertical-came
   --strict --deep` clean, notarized (Accepted) and stapled; `spctl` says "Notarized
   Developer ID". The camera package is notarized and accepted by `spctl --type install`,
   and its payload is `./Vertical Camera.app` installed into `/Applications`.
-* Not done yet: activation on a real Mac and a frame actually reaching a client app.
+* 0.3, on a real Mac (Apple silicon): activation, an update over an activated camera
+  (build 4 over build 3, from the package, without Uninstall), frames in a client app
+  (AVFoundation: 30 fps from the placeholder and from OBS), and the delay to the client
+  (37 ms from the OBS timestamp at 30 fps, `vertical-sync-measure`). Two bugs found on the
+  way: the placeholder text was drawn with AppKit, which needs the window server (now
+  Core Text); and the samples carried format descriptions without the colour
+  attachments of their pixel buffers, so CoreMedia refused every frame (now made from
+  the buffer, in the extension and in the plugin).
+
+### Updating the camera
+
+macOS can keep a new build of an activated camera extension pending until a reboot,
+with no camera in the apps meanwhile. The host app therefore first lists the installed
+builds (`propertiesRequest`): when another build is enabled it deactivates it, then
+activates the bundled one; an activation that would only complete after a reboot falls
+back to the same sequence once. The package's postinstall runs
+`Vertical Camera.app --install --quit-when-done` as the logged-in user when a camera is
+already activated, so an update needs no manual Uninstall / Install.
