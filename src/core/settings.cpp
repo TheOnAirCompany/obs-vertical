@@ -133,9 +133,14 @@ Json settingsToJson(const Settings &s, KeyMode keys)
 	c.set("output_height", s.canvas.outputHeight);
 	o.set("canvas", std::move(c));
 
+	/* Objects, not bare strings: OBS keeps only objects in the arrays of obs_data
+	 * (the collection file), bare strings were lost. */
 	Json order = Json::array();
-	for (const std::string &n : s.sceneOrder)
-		order.push(n);
+	for (const std::string &n : s.sceneOrder) {
+		Json o = Json::object();
+		o.set("name", n);
+		order.push(std::move(o));
+	}
 	o.set("scene_order", std::move(order));
 	o.set("current_scene", s.currentScene);
 	o.set("linked_scenes", s.linkedScenes);
@@ -189,9 +194,11 @@ Settings settingsFromJson(const Json &j, std::vector<std::string> *w)
 	}
 	s.canvas.outputHeight = clampInt(c.get("output_height"), 0, 0, kMaxCanvasSide, "output height", w);
 
-	for (const Json &n : j.get("scene_order").items())
-		if (n.isString() && !n.asString().empty())
-			s.sceneOrder.push_back(n.asString());
+	for (const Json &n : j.get("scene_order").items()) {
+		const std::string name = n.isObject() ? n.get("name").asString() : n.asString("");
+		if (!name.empty())
+			s.sceneOrder.push_back(name);
+	}
 	s.currentScene = j.get("current_scene").asString();
 	s.linkedScenes = j.get("linked_scenes").asBool(false);
 	s.links = SceneLinks::fromJson(j.get("links"));

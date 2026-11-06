@@ -145,3 +145,38 @@ TEST("settings: find destinations")
 	CHECK_EQ(s.destinations[0].name, std::string("TT"));
 	CHECK_EQ(s.destinationIds().size(), 2u);
 }
+
+namespace {
+
+/* OBS stores the settings in an obs_data: its arrays keep objects only. */
+bool arraysHoldObjectsOnly(const Json &j)
+{
+	if (j.isArray()) {
+		for (const Json &item : j.items())
+			if (!item.isObject() || !arraysHoldObjectsOnly(item))
+				return false;
+		return true;
+	}
+	if (j.isObject())
+		for (const auto &m : j.members())
+			if (!arraysHoldObjectsOnly(m.second))
+				return false;
+	return true;
+}
+
+} // namespace
+
+TEST("settings: every array holds objects (obs_data drops bare values)")
+{
+	Settings s;
+	s.sceneOrder = {"A", "B"};
+	s.links.link("Main", "A");
+	s.destinations.push_back(makeDestination(Platform::TikTok, "d1", "TikTok"));
+	const Json j = settingsToJson(s);
+	CHECK(arraysHoldObjectsOnly(j));
+	const Settings back = settingsFromJson(j);
+	CHECK(back.sceneOrder == s.sceneOrder);
+	/* Older files: bare strings are still read. */
+	const Settings old = loadSettings("{\"version\":1,\"scene_order\":[\"X\",\"Y\"]}");
+	CHECK(old.sceneOrder == std::vector<std::string>({"X", "Y"}));
+}
