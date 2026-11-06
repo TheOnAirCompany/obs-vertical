@@ -52,6 +52,8 @@ final class DeviceSource: NSObject, CMIOExtensionDeviceSource {
     private var consumeTimer: DispatchSourceTimer?
     private var placeholders: [Int: CVPixelBuffer] = [:]
     private var transfer: VTPixelTransferSession?
+    private var sampleDescription: CMFormatDescription?
+    private var sentFrames: UInt64 = 0
 
     /// The plugin is considered gone when no frame arrived for this long.
     private let sinkTimeoutNs: UInt64 = 500_000_000
@@ -270,6 +272,10 @@ final class DeviceSource: NSObject, CMIOExtensionDeviceSource {
             duration: CMTime(value: 1, timescale: streamSource.frameRate),
             presentationTimeStamp: CMTime(value: CMTimeValue(hostNs), timescale: CMTimeScale(NSEC_PER_SEC)),
             decodeTimeStamp: .invalid)
+        // The sample's format description must match the image buffer, attachments
+        // included (YCbCr matrix, primaries, transfer function set by OBS or by the pixel
+        // transfer): the plain stream format does not, and CoreMedia refuses the sample.
+        guard let description = sampleDescription(for: output) else { return }
         var sample: CMSampleBuffer?
         let status = CMSampleBufferCreateForImageBuffer(
             allocator: kCFAllocatorDefault,
@@ -277,12 +283,19 @@ final class DeviceSource: NSObject, CMIOExtensionDeviceSource {
             dataReady: true,
             makeDataReadyCallback: nil,
             refcon: nil,
-            formatDescription: descriptions[formatIndex],
+            formatDescription: description,
             sampleTiming: &timing,
             sampleBufferOut: &sample
         )
-        guard status == noErr, let sample = sample else { return }
+        guard status == noErr, let sample = sample else {
+            os_log(.error, log: extensionLog, "cannot make a sample buffer: %d", status)
+            return
+        }
         streamSource.stream.send(sample, discontinuity: [], hostTimeInNanoseconds: hostNs)
+        sentFrames += 1
+        if sentFrames == 1 {
+            os_log(.info, log: extensionLog, "first frame sent to the camera clients")
+        }
     }
 
     /// Centered, wrapped text drawn with Core Text into a bitmap context.
@@ -308,6 +321,18 @@ final class DeviceSource: NSObject, CMIOExtensionDeviceSource {
         let frame = CTFramesetterCreateFrame(
             setter, CFRange(location: 0, length: 0), CGPath(rect: rect, transform: nil), nil)
         CTFrameDraw(frame, context)
+    }
+
+    /// Format description of the samples made from `image`: kept while it matches.
+    private func sampleDescription(for image: CVPixelBuffer) -> CMFormatDescription? {
+        if let current = sampleDescription, CMVideoFormatDescriptionMatchesImageBuffer(current, imageBuffer: image) {
+            return current
+        }
+        var description: CMFormatDescription?
+        CMVideoFormatDescriptionCreateForImageBuffer(
+            allocator: kCFAllocatorDefault, imageBuffer: image, formatDescriptionOut: &description)
+        sampleDescription = description
+        return description
     }
 
     /// Black frame with a short message, drawn once per format and kept.

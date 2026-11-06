@@ -351,9 +351,19 @@ namespace vertical::virtualcam {
             timing.presentationTimeStamp = CMTimeMake((int64_t) frame->timestamp, NSEC_PER_SEC);
             timing.decodeTimeStamp = kCMTimeInvalid;
 
+            /* The format description must match the buffer, colour attachments included:
+             * made from the first buffer, kept while it matches. */
+            if (!vc->format || !CMVideoFormatDescriptionMatchesImageBuffer(vc->format, buffer)) {
+                if (vc->format)
+                    CFRelease(vc->format);
+                vc->format = nullptr;
+                CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault, buffer, &vc->format);
+            }
             CMSampleBufferRef sample = nullptr;
-            const OSStatus status = CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault, buffer, true, nullptr,
-                                                                       nullptr, vc->format, &timing, &sample);
+            const OSStatus status = vc->format
+                                        ? CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault, buffer, true, nullptr,
+                                                                             nullptr, vc->format, &timing, &sample)
+                                        : kCMFormatDescriptionError_InvalidParameter;
             CVPixelBufferRelease(buffer);
             if (status != noErr || !sample) {
                 vc->dropped++;
