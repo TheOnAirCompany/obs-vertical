@@ -841,6 +841,8 @@ struct DockState {
 	QString previousLink; /* vertical scene the main scene was linked to before */
 	bool createdMain = false;
 	QPointer<QMenu> menu;
+	QString previousProgram; /* main program scene before the linked switch test */
+	bool wasLinkedMode = false;
 	std::vector<std::string> shotDestinations;
 	std::vector<std::string> rowDestinations; /* destination rows group: ids to remove */
 	QStringList shotScenes;
@@ -1054,6 +1056,14 @@ QMenu *openLinkMenu()
 	return nullptr;
 }
 
+void dockCloseMenu()
+{
+	if (gd.menu)
+		gd.menu->close();
+	if (QMenu *m = openLinkMenu())
+		m->close();
+}
+
 QAction *linkAction(QMenu *menu)
 {
 	if (!menu)
@@ -1064,33 +1074,93 @@ QAction *linkAction(QMenu *menu)
 	return nullptr;
 }
 
+/* A link menu of scene B opened straight from the dock (the same non-blocking popup
+ * the link icon opens), used at once: no event runs between opening it and triggering
+ * its entry, so a focus change of the test OBS (which closes popups) cannot get in the
+ * way. Opening from a click is checked by "dock-link-menu-open". */
+QMenu *freshLinkMenu()
+{
+	dockCloseMenu();
+	ui::Dock *d = dockWidget();
+	auto *list = dockChild<ui::SceneList>("verticalScenes");
+	if (!d || !list)
+		return nullptr;
+	const QRect lr = list->linkRectFor(gd.sceneB);
+	gd.menu = d->openLinkMenu(gd.sceneB, list->viewport()->mapToGlobal(lr.center()));
+	return gd.menu;
+}
+
 void dockLinkToggle(bool expectLinked)
 {
-	QMenu *menu = openLinkMenu();
+	QMenu *menu = freshLinkMenu();
 	QAction *a = linkAction(menu);
 	const char *name = expectLinked ? "dock-link-menu-links" : "dock-link-menu-unlinks";
 	if (!a) {
 		R->check(false, name, QStringLiteral("no entry for '%1'").arg(QString::fromStdString(gd.mainScene)));
 		return;
 	}
+	const bool before = a->isChecked();
 	a->trigger();
 	const QString now = linkOf(gd.mainScene.c_str());
 	auto *list = dockChild<ui::SceneList>("verticalScenes");
 	QListWidgetItem *item = list ? list->itemNamed(gd.sceneB) : nullptr;
 	const bool rowLinked = item && item->data(ui::SceneList::LinkedRole).toBool();
-	const bool ok = expectLinked ? (now == gd.sceneB && rowLinked && a->isChecked())
-				     : (now.isEmpty() && !rowLinked && !a->isChecked());
+	const bool ok = before != expectLinked && (expectLinked ? (now == gd.sceneB && rowLinked && a->isChecked())
+								: (now.isEmpty() && !rowLinked && !a->isChecked()));
 	R->check(ok, name,
-		 QStringLiteral("'%1' -> '%2', row linked %3, menu open %4")
+		 QStringLiteral("'%1' -> '%2', checked before %3, row linked %4")
 			 .arg(QString::fromStdString(gd.mainScene), now)
-			 .arg(rowLinked)
-			 .arg(openLinkMenu() != nullptr));
+			 .arg(before)
+			 .arg(rowLinked));
+	/* A menu opened again shows the new state. */
+	QAction *again = linkAction(freshLinkMenu());
+	R->check(again && again->isChecked() == expectLinked,
+		 expectLinked ? "dock-link-menu-shows-linked" : "dock-link-menu-shows-unlinked");
+	dockCloseMenu();
 }
 
-void dockCloseMenu()
+/* With "Linked scenes" on, putting the linked 16:9 scene on program switches the
+ * vertical output to scene B; unlinked, it stays where it is. */
+void dockLinkedSwitchSetup()
 {
-	if (QMenu *m = openLinkMenu())
-		m->close();
+	OBSSourceAutoRelease current = obs_frontend_get_current_scene();
+	gd.previousProgram = current ? QString::fromUtf8(obs_source_get_name(current)) : QString();
+	obs_scene_release(obs_scene_create("Selftest Link Main"));
+	gd.wasLinkedMode = V().linkedMode();
+	V().setLinkedMode(true);
+	V().setCurrentScene(gd.sceneA);
+	R->check(V().linkScene(QStringLiteral("Selftest Link Main"), gd.sceneB), "dock-linked-switch-link");
+	OBSSourceAutoRelease linkMain = obs_get_source_by_name("Selftest Link Main");
+	obs_frontend_set_current_scene(linkMain);
+}
+
+void dockLinkedSwitchUnlinked()
+{
+	/* Unlinked: leave the test scene (back to the previous program) ... */
+	V().unlinkScene(QStringLiteral("Selftest Link Main"));
+	OBSSourceAutoRelease prev = obs_get_source_by_name(gd.previousProgram.toUtf8().constData());
+	if (prev)
+		obs_frontend_set_current_scene(prev);
+}
+
+void dockLinkedSwitchAgain()
+{
+	/* ... and put it on program again: the vertical scene does not move. */
+	V().setCurrentScene(gd.sceneA);
+	OBSSourceAutoRelease linkMain = obs_get_source_by_name("Selftest Link Main");
+	obs_frontend_set_current_scene(linkMain);
+}
+
+void dockLinkedSwitchCleanup()
+{
+	R->check(V().currentScene() == gd.sceneA, "dock-unlinked-switch-keeps-scene", V().currentScene());
+	V().setLinkedMode(gd.wasLinkedMode);
+	OBSSourceAutoRelease prev = obs_get_source_by_name(gd.previousProgram.toUtf8().constData());
+	if (prev)
+		obs_frontend_set_current_scene(prev);
+	OBSSourceAutoRelease linkMain = obs_get_source_by_name("Selftest Link Main");
+	if (linkMain)
+		obs_source_remove(linkMain);
 }
 
 void dockRecordStart()
@@ -1806,6 +1876,11 @@ void runSelfTest()
 		R->add(100, [] { dockLinkToggle(true); });
 		R->add(200, [] { dockLinkToggle(false); });
 		R->add(100, [] { dockCloseMenu(); });
+		R->add(100, [] { dockLinkedSwitchSetup(); });
+		R->waitUntil("dock-linked-switch-follows", 3000, [] { return V().currentScene() == gd.sceneB; });
+		R->add(200, [] { dockLinkedSwitchUnlinked(); });
+		R->add(600, [] { dockLinkedSwitchAgain(); });
+		R->add(800, [] { dockLinkedSwitchCleanup(); });
 		R->add(200, [] {
 			useTempRecordFolder();
 			dockRecordStart();
