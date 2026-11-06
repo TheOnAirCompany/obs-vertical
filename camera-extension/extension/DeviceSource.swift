@@ -9,8 +9,9 @@
 // process boundary without a copy. When the plugin is not sending, the source shows a
 // placeholder ("Start the Vertical camera in OBS").
 
-import AppKit
+import CoreGraphics
 import CoreMediaIO
+import CoreText
 import Foundation
 import IOKit.audio
 import VideoToolbox
@@ -284,6 +285,31 @@ final class DeviceSource: NSObject, CMIOExtensionDeviceSource {
         streamSource.stream.send(sample, discontinuity: [], hostTimeInNanoseconds: hostNs)
     }
 
+    /// Centered, wrapped text drawn with Core Text into a bitmap context.
+    private func drawCentered(
+        _ text: String, in context: CGContext, rect: CGRect, size: CGFloat, bold: Bool, white: CGFloat
+    ) {
+        let font =
+            CTFontCreateUIFontForLanguage(bold ? .emphasizedSystem : .system, size, nil)
+            ?? CTFontCreateWithName("Helvetica" as CFString, size, nil)
+        var alignment = CTTextAlignment.center
+        let paragraph = withUnsafePointer(to: &alignment) {
+            CTParagraphStyleCreate(
+                [CTParagraphStyleSetting(spec: .alignment, valueSize: MemoryLayout<CTTextAlignment>.size, value: $0)],
+                1)
+        }
+        let attributes: [CFString: Any] = [
+            kCTFontAttributeName: font,
+            kCTForegroundColorAttributeName: CGColor(gray: white, alpha: 1),
+            kCTParagraphStyleAttributeName: paragraph,
+        ]
+        let string = CFAttributedStringCreate(nil, text as CFString, attributes as CFDictionary)!
+        let setter = CTFramesetterCreateWithAttributedString(string)
+        let frame = CTFramesetterCreateFrame(
+            setter, CFRange(location: 0, length: 0), CGPath(rect: rect, transform: nil), nil)
+        CTFrameDraw(frame, context)
+    }
+
     /// Black frame with a short message, drawn once per format and kept.
     private func placeholder(for index: Int) -> CVPixelBuffer? {
         if let cached = placeholders[index] {
@@ -308,28 +334,19 @@ final class DeviceSource: NSObject, CMIOExtensionDeviceSource {
             context.setFillColor(CGColor(red: 0.07, green: 0.08, blue: 0.10, alpha: 1))
             context.fill(CGRect(x: 0, y: 0, width: width, height: height))
 
-            let graphics = NSGraphicsContext(cgContext: context, flipped: false)
-            NSGraphicsContext.saveGraphicsState()
-            NSGraphicsContext.current = graphics
-            let paragraph = NSMutableParagraphStyle()
-            paragraph.alignment = .center
-            let title: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: CGFloat(width) * 0.06, weight: .semibold),
-                .foregroundColor: NSColor(white: 0.92, alpha: 1),
-                .paragraphStyle: paragraph,
-            ]
-            let body: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: CGFloat(width) * 0.035),
-                .foregroundColor: NSColor(white: 0.62, alpha: 1),
-                .paragraphStyle: paragraph,
-            ]
+            // Core Text only: the extension runs without access to the window server, and
+            // AppKit text drawing (NSFont, NSString.draw) asks for it and blocks.
             let mid = CGFloat(height) / 2
-            NSString(string: "Vertical Camera").draw(
-                in: CGRect(x: 0, y: mid, width: CGFloat(width), height: CGFloat(width) * 0.09), withAttributes: title)
-            NSString(string: "Start the virtual camera in the Vertical dock of OBS").draw(
-                in: CGRect(x: CGFloat(width) * 0.1, y: mid - CGFloat(width) * 0.12, width: CGFloat(width) * 0.8,
-                    height: CGFloat(width) * 0.11), withAttributes: body)
-            NSGraphicsContext.restoreGraphicsState()
+            drawCentered(
+                "Vertical Camera", in: context,
+                rect: CGRect(x: 0, y: mid, width: CGFloat(width), height: CGFloat(width) * 0.09),
+                size: CGFloat(width) * 0.06, bold: true, white: 0.92)
+            drawCentered(
+                "Start the virtual camera in the Vertical dock of OBS", in: context,
+                rect: CGRect(
+                    x: CGFloat(width) * 0.1, y: mid - CGFloat(width) * 0.12, width: CGFloat(width) * 0.8,
+                    height: CGFloat(width) * 0.11),
+                size: CGFloat(width) * 0.035, bold: false, white: 0.62)
         }
         CVPixelBufferUnlockBaseAddress(bgra, [])
 
