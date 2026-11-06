@@ -17,6 +17,8 @@ src/core/   pure C++17, no OBS, no Qt          unit-tested (tests/)
   render-gate     reference-counted "who needs the picture" (output/preview/vcam)
   recording       recording formats -> OBS output types (hybrid MP4/MOV, MKV, ...)
   settings        everything saved with a scene collection, JSON (de)serialization
+  dock-model      dock logic: Studio/Compact by width, status lines, bitrate, link menu,
+                  platform tiles, encoder chip, virtual camera state
 
 src/obs/    libobs + frontend API, UI thread unless noted
   vertical        the canvas, its scenes, linked scenes, persistence, render gate
@@ -26,8 +28,14 @@ src/obs/    libobs + frontend API, UI thread unless noted
   virtualcam-mac  raw output that feeds the Vertical Camera extension (macOS)
 
 src/ui/     Qt widgets
-  dock            "Vertical" dock: preview, scenes, outputs, status
-  preview         obs_display that draws the canvas texture, letterboxed
+  dock            "Vertical" dock: header, preview, scenes, destinations, recording /
+                  replay / virtual camera, status bar; Studio and Compact layouts
+  dock-rows       scene list (program row, drag handle, link icon), destination rows
+  dock-style      tokens (sizes, status colours), icons, switch, tiles, chips
+  dock-decisions  one switch per design decision of the dock (see section 9)
+  preview         obs_display that draws the canvas texture, letterboxed, with the
+                  LIVE pill, aspect tag and collapse button drawn in the display;
+                  frame (red while live) and the detached preview window
   settings-dialog canvas, destinations, recording/replay
   destination-dialog  one destination with live validation
 
@@ -180,7 +188,10 @@ VERTICAL_SELFTEST=1 VERTICAL_SELFTEST_QUIT=1 /Applications/OBS.app/Contents/MacO
 ```
 
 * `VERTICAL_SELFTEST_QUIT=1` closes OBS when done.
-* `VERTICAL_SELFTEST_ONLY=canvas,scenes,gate,record,stream` runs only those groups.
+* `VERTICAL_SELFTEST_ONLY=canvas,scenes,gate,record,multistream,stream,dock` runs only those groups.
+* `VERTICAL_SELFTEST_SHOTS=<dir>` saves `studio.png` and `compact.png` of the dock (with two
+  destinations live on local servers and a recording running); needs
+  `VERTICAL_SELFTEST_RTMP_PORT` and two more listeners at `+3` and `+4`.
 
 | Group | What it checks |
 | --- | --- |
@@ -188,7 +199,8 @@ VERTICAL_SELFTEST=1 VERTICAL_SELFTEST_QUIT=1 /Applications/OBS.app/Contents/MacO
 | `scenes` | Add a scene with a colour source, make it current, it is on channel 0 while the gate is held, link it; rename it (list, order, current scene and link follow, a taken name is refused); remove it (link dropped, current scene moves, source gone). |
 | `gate` | With the dock preview hidden and no output, channel 0 is empty; a recording puts the current scene on it; it is empty again after the stop. |
 | `record` | 3 s recording of a moving noise image into `$TMPDIR/vertical-selftest`; logs the encoder actually used and checks it is the plugin's choice (hardware when available); the file exists and is over 50 KB. Then recording + replay buffer together share one video encoder and one audio encoder. |
-| `stream` | A destination to `rtmp://127.0.0.1:1/live` (key `test`) reports an error or reconnect state within 8 s, stops, and is removed. |
+| `stream` | A destination to `rtmp://127.0.0.1:1/live` (key `test`) reports an error or reconnect state within 8 s, and its dock row shows it (dot, text, ▶ / ■); it stops and is removed. |
+| `dock` | The dock floated and resized: Studio at 700 px (header chip, preview, scenes section, Start all / Stop all, destinations, tabs, footer, 32 px rows), still Studio just under the threshold (hysteresis), Compact at 320 px (no section headers, three lines, 28 px rows); forced layout from the ⋯ menu choice; a click on a scene row puts it on program; the link icon of a row opens the link menu, which links then unlinks a 16:9 scene; Start / Stop Recording in the Recording tab (timer, Compact line); preview collapse and detached preview window. |
 
 The log (`~/Library/Application Support/obs-studio/logs`) gets one line per check,
 `[selftest] PASS|FAIL <name> <detail>`, a CPU sample taken during the recording,
@@ -204,7 +216,37 @@ for i in 1 2 3; do ffmpeg -listen 1 -i rtmp://127.0.0.1:$((19350+i))/live/test -
 VERTICAL_SELFTEST=1 VERTICAL_SELFTEST_ONLY=multistream VERTICAL_SELFTEST_RTMP_PORT=19351 OBS
 ```
 
-It starts three destinations at once, waits until all are live, then checks that they share
-one video encoder and send frames without drops, and logs `[selftest] PERF multistream ...`
+It starts three destinations at once, waits until all are live, checks their dock rows
+("Live · 00:00:02 · 6.0 Mbps", ■, red dot), the live count and the red preview frame, then
+checks that they share one video encoder and send frames without drops, and logs `[selftest] PERF multistream ...`
 (process CPU, lagged frames). Measured on Apple silicon: 3 × 1080x1920 at 30 fps with the
 VideoToolbox hardware encoder, 1.9 % CPU, 0 dropped frames.
+
+## 9. The dock
+
+Two layouts, picked by `core::chooseDockMode`: **Studio** (two columns: preview and
+scenes on the left, 220 px; destinations and the Recording | Replay Buffer | Virtual
+Camera tabs on the right) from 520 px wide, **Compact** (one column: preview, scenes,
+destinations, three lines) below, with a 16 px hysteresis. The ⋯ menu can force one
+(saved in the OBS user config, `[Vertical] DockLayout`).
+
+* Header: canvas size and frame rate, the "Linked scenes" switch, ⋯.
+* Preview: LIVE pill and aspect tag drawn inside the display (a native surface cannot
+  host widgets), red frame while a destination is live, collapse button, double-click
+  for a detached window.
+* Scenes: the program scene in red tint with a PROGRAM badge, drag handle, link icon
+  on each row. The link icon opens a menu of the 16:9 scenes with checkmarks (several
+  16:9 scenes can follow one vertical scene; checking a 16:9 scene linked elsewhere
+  moves its link).
+* Destinations: platform tile (colours and glyphs drawn in code), status line from the
+  output signals ("Live · 00:12:34 · 6.0 Mbps", "Connecting…", "Reconnecting 2/25…",
+  "Error: …", "Stopped"), ▶ / ■ and ⋯ (Edit, Duplicate, Delete). Bitrate: delta of
+  `obs_output_get_total_bytes` over the last second; uptime from the `start` signal.
+* Status bar: encoder chip (family and hardware/software), outputs live, process CPU
+  (`os_cpu_usage_info`), version and settings.
+
+Colours follow the OBS theme palette; status colours are fixed (red `#E5484D` live or
+error, amber `#E3A748` connecting or waiting, green `#30A46C` ready, grey stopped).
+Every decision of the design review is a constant in `src/ui/dock-decisions.hpp`;
+values the review did not give are marked `provisional` in `dock-style.hpp`, `dock.cpp`
+and `core/dock-model.hpp`.

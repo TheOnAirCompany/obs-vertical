@@ -25,7 +25,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *
  *   VERTICAL_SELFTEST=1         run it 1.5 s after OBS finished loading
  *   VERTICAL_SELFTEST_QUIT=1    close OBS when done
- *   VERTICAL_SELFTEST_ONLY=a,b  only these groups: canvas, scenes, gate, record, stream
+ *   VERTICAL_SELFTEST_ONLY=a,b  only these groups: canvas, scenes, gate, record, multistream,
+ *                               stream, dock (multistream needs VERTICAL_SELFTEST_RTMP_PORT)
+ *   VERTICAL_SELFTEST_SHOTS=dir screenshots of the dock in Studio and Compact into dir
+ *                               (needs VERTICAL_SELFTEST_RTMP_PORT: two more listeners at +3, +4)
  */
 
 #include "core/destination.hpp"
@@ -35,22 +38,38 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "obs/api.hpp"
 #include "obs/hotkeys.hpp"
 #include "obs/outputs.hpp"
+#include "obs/text.hpp"
 #include "obs/vertical.hpp"
+#include "ui/dock-rows.hpp"
+#include "ui/dock-style.hpp"
+#include "ui/dock.hpp"
+#include "ui/preview.hpp"
 
+#include <graphics/graphics.h>
 #include <obs-frontend-api.h>
 #include <obs-module.h>
 #include <obs.hpp>
 #include <plugin-support.h>
 #include <util/platform.h>
 
+#include <QAbstractButton>
+#include <QApplication>
 #include <QColor>
 #include <QDateTime>
 #include <QDir>
 #include <QDockWidget>
 #include <QFileInfo>
 #include <QImage>
+#include <QLabel>
 #include <QListWidget>
 #include <QMainWindow>
+#include <QMenu>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QPixmap>
+#include <QPointer>
+#include <QPushButton>
+#include <QRegularExpression>
 #include <QTimer>
 
 #include <algorithm>
@@ -802,6 +821,598 @@ void multiRemove()
 	g_multi.clear();
 }
 
+/* ------------------------------------------------------------------ dock (0.2) */
+/* The redesigned dock: both layouts, the switch by width, a click on a scene row,
+ * the link menu, the recording tab, and destination rows during real streams. */
+
+struct DockState {
+	bool saved = false;
+	bool wasFloating = false;
+	bool wasVisible = false;
+	QRect geometry;
+	core::LayoutChoice choice = core::LayoutChoice::Automatic;
+	QString sceneA, sceneB;
+	std::string mainScene;
+	QString previousLink; /* vertical scene the main scene was linked to before */
+	bool createdMain = false;
+	QPointer<QMenu> menu;
+	std::vector<std::string> shotDestinations;
+	QStringList shotScenes;
+	QString shotImage;
+};
+DockState gd;
+
+QDockWidget *dockFrame()
+{
+	auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+	return main ? main->findChild<QDockWidget *>(QStringLiteral("vertical-dock")) : nullptr;
+}
+
+ui::Dock *dockWidget()
+{
+	QDockWidget *d = dockFrame();
+	return d ? d->findChild<ui::Dock *>() : nullptr;
+}
+
+template<typename W> W *dockChild(const char *name)
+{
+	ui::Dock *d = dockWidget();
+	return d ? d->findChild<W *>(QString::fromUtf8(name)) : nullptr;
+}
+
+bool shown(QWidget *w)
+{
+	return w && w->isVisible();
+}
+
+/* Floats the dock at a given size (the real resize path of the dock). */
+void dockFloat(int w, int h)
+{
+	QDockWidget *d = dockFrame();
+	if (!d)
+		return;
+	if (!gd.saved) {
+		gd.saved = true;
+		gd.wasFloating = d->isFloating();
+		gd.wasVisible = d->isVisible();
+		gd.geometry = d->geometry();
+		if (ui::Dock *dock = dockWidget())
+			gd.choice = dock->layoutChoice();
+	}
+	d->show();
+	d->setFloating(true);
+	d->resize(w, h);
+	d->raise();
+}
+
+void dockRestore()
+{
+	QDockWidget *d = dockFrame();
+	if (!d || !gd.saved)
+		return;
+	if (ui::Dock *dock = dockWidget())
+		dock->setLayoutChoice(gd.choice);
+	d->setFloating(gd.wasFloating);
+	if (gd.wasFloating)
+		d->setGeometry(gd.geometry);
+	d->setVisible(gd.wasVisible);
+	gd.saved = false;
+}
+
+void clickAt(QWidget *w, const QPoint &pos)
+{
+	const QPointF global = w->mapToGlobal(QPointF(pos));
+	QMouseEvent press(QEvent::MouseButtonPress, QPointF(pos), global, Qt::LeftButton, Qt::LeftButton,
+			  Qt::NoModifier);
+	QApplication::sendEvent(w, &press);
+	QMouseEvent release(QEvent::MouseButtonRelease, QPointF(pos), global, Qt::LeftButton, Qt::NoButton,
+			    Qt::NoModifier);
+	QApplication::sendEvent(w, &release);
+}
+
+QString modeName(core::DockMode m)
+{
+	return m == core::DockMode::Studio ? QStringLiteral("Studio") : QStringLiteral("Compact");
+}
+
+QString widthText()
+{
+	ui::Dock *d = dockWidget();
+	return d ? QStringLiteral("dock %1 px, %2").arg(d->width()).arg(modeName(d->mode()))
+		 : QStringLiteral("no dock");
+}
+
+void dockCheckStudio()
+{
+	ui::Dock *d = dockWidget();
+	R->check(d && d->mode() == core::DockMode::Studio, "dock-studio-mode", widthText());
+	if (!d)
+		return;
+	ui::Chip *chip = dockChild<ui::Chip>("canvasChip");
+	const core::Size cs = V().canvasSize();
+	obs_video_info ovi = {};
+	obs_get_video_info(&ovi);
+	const QString want = QString::fromStdString(core::canvasChip(cs.width, cs.height, ovi.fps_num, ovi.fps_den));
+	R->check(chip && shown(chip) && chip->text() == want, "dock-studio-header-chip",
+		 chip ? chip->text() : QString());
+	R->check(shown(dockChild<QWidget>("linkedSwitch")) && shown(dockChild<QWidget>("dockMore")),
+		 "dock-studio-header-switch-and-more");
+	R->check(shown(dockChild<QWidget>("previewFrame")), "dock-studio-preview");
+	R->check(shown(dockChild<QWidget>("verticalScenes")) && shown(dockChild<QWidget>("addScene")),
+		 "dock-studio-scenes-section");
+	R->check(shown(dockChild<QWidget>("startAll")) && shown(dockChild<QWidget>("stopAll")),
+		 "dock-studio-start-stop-all");
+	R->check(shown(dockChild<QWidget>("destinations")) && shown(dockChild<QWidget>("addDestination")),
+		 "dock-studio-destinations");
+	const bool tabs = shown(dockChild<QWidget>("tab0")) && shown(dockChild<QWidget>("tab1")) &&
+			  shown(dockChild<QWidget>("recordButton"));
+#ifdef VERTICAL_VIRTUALCAM
+	const bool camTab = shown(dockChild<QWidget>("tab2"));
+#else
+	const bool camTab = true;
+#endif
+	R->check(tabs && camTab && !shown(dockChild<QWidget>("recLine")), "dock-studio-tabs");
+	ui::Chip *enc = dockChild<ui::Chip>("encoderChip");
+	QLabel *cpu = dockChild<QLabel>("footerCpu");
+	R->check(enc && shown(enc) && !enc->text().isEmpty() && cpu && shown(cpu), "dock-studio-footer",
+		 enc ? enc->text() + QStringLiteral(" | ") + (cpu ? cpu->text() : QString()) : QString());
+	auto *scenes = dockChild<ui::SceneList>("verticalScenes");
+	R->check(scenes && scenes->rowHeight() == ui::tokens::kRowStudio, "dock-studio-row-height",
+		 scenes ? QString::number(scenes->rowHeight()) : QString());
+}
+
+void dockCheckCompact()
+{
+	ui::Dock *d = dockWidget();
+	R->check(d && d->mode() == core::DockMode::Compact, "dock-compact-mode", widthText());
+	if (!d)
+		return;
+	R->check(shown(dockChild<QWidget>("previewFrame")) && shown(dockChild<QWidget>("verticalScenes")),
+		 "dock-compact-preview-and-scenes");
+	R->check(!shown(dockChild<QWidget>("addScene")) && !shown(dockChild<QWidget>("startAll")),
+		 "dock-compact-no-section-headers");
+	R->check(shown(dockChild<QWidget>("destinations")), "dock-compact-destinations");
+	R->check(shown(dockChild<QWidget>("recLine")) && shown(dockChild<QWidget>("replayLine")) &&
+			 !shown(dockChild<QWidget>("recordButton")),
+		 "dock-compact-lines");
+	R->check(shown(dockChild<QWidget>("encoderChip")), "dock-compact-footer");
+	auto *scenes = dockChild<ui::SceneList>("verticalScenes");
+	R->check(scenes && scenes->rowHeight() == ui::tokens::kRowCompact, "dock-compact-row-height",
+		 scenes ? QString::number(scenes->rowHeight()) : QString());
+}
+
+void dockScenesSetup()
+{
+	gd.sceneA = V().addScene(QStringLiteral("Selftest Dock A"));
+	gd.sceneB = V().addScene(QStringLiteral("Selftest Dock B"));
+	if (g.previousScene.isEmpty())
+		g.previousScene = V().currentScene();
+	V().setCurrentScene(gd.sceneA);
+	/* A 16:9 scene to link to: the first main scene, or one made for the test. */
+	char **names = obs_frontend_get_scene_names();
+	if (names && names[0])
+		gd.mainScene = names[0];
+	bfree(names);
+	if (gd.mainScene.empty()) {
+		obs_scene_release(obs_scene_create("Selftest Main 16:9"));
+		gd.mainScene = "Selftest Main 16:9";
+		gd.createdMain = true;
+	}
+	gd.previousLink = linkOf(gd.mainScene.c_str());
+}
+
+void dockClickScene()
+{
+	auto *list = dockChild<ui::SceneList>("verticalScenes");
+	QListWidgetItem *item = list ? list->itemNamed(gd.sceneB) : nullptr;
+	if (!item) {
+		R->check(false, "dock-scene-row-click", QStringLiteral("row not found"));
+		return;
+	}
+	list->scrollToItem(item);
+	const QRect r = list->visualItemRect(item);
+	clickAt(list->viewport(), QPoint(r.left() + r.width() / 3, r.center().y()));
+}
+
+void dockCheckSceneOnProgram()
+{
+	auto *list = dockChild<ui::SceneList>("verticalScenes");
+	QListWidgetItem *item = list ? list->itemNamed(gd.sceneB) : nullptr;
+	OBSSourceAutoRelease src = V().sceneSource(gd.sceneB);
+	OBSSourceAutoRelease ch = channel0();
+	R->check(item && item->data(ui::SceneList::ProgramRole).toBool() && (!V().rendering() || ch == src),
+		 "dock-scene-row-program", V().currentScene());
+}
+
+void dockOpenLinkMenu()
+{
+	auto *list = dockChild<ui::SceneList>("verticalScenes");
+	const QRect lr = list ? list->linkRectFor(gd.sceneB) : QRect();
+	if (lr.isEmpty()) {
+		R->check(false, "dock-link-menu-open", QStringLiteral("no link icon"));
+		return;
+	}
+	clickAt(list->viewport(), lr.center());
+}
+
+QMenu *openLinkMenu()
+{
+	QWidget *popup = QApplication::activePopupWidget();
+	auto *menu = qobject_cast<QMenu *>(popup);
+	if (menu && menu->objectName() == QLatin1String("verticalLinkMenu"))
+		return menu;
+	return nullptr;
+}
+
+QAction *linkAction(QMenu *menu)
+{
+	if (!menu)
+		return nullptr;
+	for (QAction *a : menu->actions())
+		if (a->data().toString() == QString::fromStdString(gd.mainScene))
+			return a;
+	return nullptr;
+}
+
+void dockLinkToggle(bool expectLinked)
+{
+	QMenu *menu = openLinkMenu();
+	QAction *a = linkAction(menu);
+	const char *name = expectLinked ? "dock-link-menu-links" : "dock-link-menu-unlinks";
+	if (!a) {
+		R->check(false, name, QStringLiteral("no entry for '%1'").arg(QString::fromStdString(gd.mainScene)));
+		return;
+	}
+	a->trigger();
+	const QString now = linkOf(gd.mainScene.c_str());
+	auto *list = dockChild<ui::SceneList>("verticalScenes");
+	QListWidgetItem *item = list ? list->itemNamed(gd.sceneB) : nullptr;
+	const bool rowLinked = item && item->data(ui::SceneList::LinkedRole).toBool();
+	const bool ok = expectLinked ? (now == gd.sceneB && rowLinked && a->isChecked())
+				     : (now.isEmpty() && !rowLinked && !a->isChecked());
+	R->check(ok, name,
+		 QStringLiteral("'%1' -> '%2', row linked %3, menu open %4")
+			 .arg(QString::fromStdString(gd.mainScene), now)
+			 .arg(rowLinked)
+			 .arg(openLinkMenu() != nullptr));
+}
+
+void dockCloseMenu()
+{
+	if (QMenu *m = openLinkMenu())
+		m->close();
+}
+
+void dockRecordStart()
+{
+	if (auto *tab = dockChild<QAbstractButton>("tab0"))
+		tab->click();
+	auto *b = dockChild<QPushButton>("recordButton");
+	R->check(b && shown(b) && b->text() == T("Dock.StartRecording"), "dock-record-button-idle",
+		 b ? b->text() : QString());
+	if (b)
+		b->click();
+}
+
+void dockRecordCheckRunning()
+{
+	auto *b = dockChild<QPushButton>("recordButton");
+	auto *timer = dockChild<QLabel>("recordTimer");
+	R->check(b && b->text() == T("Dock.StopRecording") && timer && timer->text() != QLatin1String("00:00:00"),
+		 "dock-record-tab-running", timer ? timer->text() : QString());
+	/* The Compact line shows the same recording. */
+	if (ui::Dock *d = dockWidget())
+		d->setLayoutChoice(core::LayoutChoice::Compact);
+	auto *line = dockChild<ui::ElidedLabel>("recLine");
+	R->check(line && shown(line) && line->fullText().startsWith(QStringLiteral("REC")), "dock-record-compact-line",
+		 line ? line->fullText() : QString());
+	if (ui::Dock *d = dockWidget())
+		d->setLayoutChoice(core::LayoutChoice::Studio);
+	if (b)
+		b->click();
+}
+
+void dockRecordCheckStopped()
+{
+	auto *b = dockChild<QPushButton>("recordButton");
+	R->check(b && b->text() == T("Dock.StartRecording") && !O().recordingActive(), "dock-record-tab-stopped",
+		 b ? b->text() : QString());
+}
+
+void dockPreviewChecks()
+{
+	ui::Dock *d = dockWidget();
+	auto *frame = dockChild<ui::PreviewFrame>("previewFrame");
+	if (!d || !frame) {
+		R->check(false, "dock-preview-collapse");
+		return;
+	}
+	frame->setCollapsed(true);
+	const bool hidden = !frame->preview()->isVisible() && !V().settings().previewVisible &&
+			    shown(frame->expandBar());
+	frame->setCollapsed(false);
+	R->check(hidden && frame->preview()->isVisible() && V().settings().previewVisible, "dock-preview-collapse");
+	d->openPreviewWindow();
+	ui::PreviewWindow *w = d->previewWindow();
+	R->check(w && w->isVisible(), "dock-preview-window-opens");
+}
+
+void dockPreviewWindowCheck()
+{
+	ui::Dock *d = dockWidget();
+	ui::PreviewWindow *w = d ? d->previewWindow() : nullptr;
+	R->check(w && w->preview()->hasDisplay(), "dock-preview-window-display");
+	if (w)
+		w->close();
+}
+
+void dockCleanup()
+{
+	dockCloseMenu();
+	Vertical &v = V();
+	v.unlinkScene(QString::fromStdString(gd.mainScene));
+	if (!gd.previousLink.isEmpty())
+		v.linkScene(QString::fromStdString(gd.mainScene), gd.previousLink);
+	if (!g.previousScene.isEmpty())
+		v.setCurrentScene(g.previousScene);
+	for (const QString &s : {gd.sceneA, gd.sceneB})
+		if (!s.isEmpty() && v.sceneNames().contains(s))
+			v.removeScene(s);
+	gd.sceneA.clear();
+	gd.sceneB.clear();
+	if (gd.createdMain) {
+		OBSSourceAutoRelease src = obs_get_source_by_name(gd.mainScene.c_str());
+		if (src)
+			obs_source_remove(src);
+		gd.createdMain = false;
+	}
+	gd.mainScene.clear();
+	dockRestore();
+}
+
+/* Rows of the real streams (multistream group): live, time, Mbps. */
+void dockCheckLiveRows()
+{
+	ui::Dock *d = dockWidget();
+	int ok = 0;
+	QStringList texts;
+	const QString live = T("Status.Live");
+	for (const std::string &id : g_multi) {
+		auto *row = d ? d->findChild<ui::DestinationRow *>(QString::fromStdString(id)) : nullptr;
+		const QString text = row ? row->statusText() : QStringLiteral("no row");
+		texts << text;
+		/* "Live · 00:00:03 · 6.0 Mbps" */
+		const QStringList parts = text.split(QStringLiteral(" · "));
+		const bool shape = parts.size() >= 3 && parts[0] == live && parts[1].size() == 8 &&
+				   parts[1][2] == QLatin1Char(':') &&
+				   parts[2].contains(QRegularExpression(QStringLiteral("^[0-9]+[.,][0-9] ")));
+		auto *dot = row ? row->findChild<ui::StatusDot *>() : nullptr;
+		if (row && shape && row->showsStop() && dot && dot->tone() == core::Tone::Live)
+			ok++;
+	}
+	R->check(ok == (int)g_multi.size() && ok > 0, "dock-rows-live-status", texts.join(QStringLiteral(" | ")));
+	auto *count = d ? d->findChild<QLabel *>(QStringLiteral("outputsCount")) : nullptr;
+	const QString want = T("Dock.LiveCount").arg(g_multi.size());
+	R->check(count && count->text() == want, "dock-outputs-live-count", count ? count->text() : QString());
+	auto *frame = d ? d->findChild<ui::PreviewFrame *>(QStringLiteral("previewFrame")) : nullptr;
+	R->check(frame && frame->live() && frame->preview()->overlayLive(), "dock-preview-live-frame");
+}
+
+void dockCheckRowsStopped()
+{
+	ui::Dock *d = dockWidget();
+	int ok = 0;
+	for (const std::string &id : g_multi) {
+		auto *row = d ? d->findChild<ui::DestinationRow *>(QString::fromStdString(id)) : nullptr;
+		if (row && !row->showsStop() && row->statusText().startsWith(T("Status.Stopped")))
+			ok++;
+	}
+	R->check(ok == (int)g_multi.size(), "dock-rows-stopped", QStringLiteral("%1/%2").arg(ok).arg(g_multi.size()));
+	auto *frame = d ? d->findChild<ui::PreviewFrame *>(QStringLiteral("previewFrame")) : nullptr;
+	R->check(frame && !frame->live(), "dock-preview-frame-off");
+}
+
+/* Row of the unreachable destination (stream group): error or reconnecting. */
+void dockCheckErrorRow()
+{
+	ui::Dock *d = dockWidget();
+	auto *row = d ? d->findChild<ui::DestinationRow *>(QString::fromStdString(g.destinationId)) : nullptr;
+	const OutputState st = O().destinationStatus(g.destinationId).state;
+	auto *dot = row ? row->findChild<ui::StatusDot *>() : nullptr;
+	const bool error = st == OutputState::Error;
+	const QString prefix = error ? T("Status.Error") : T("Status.Reconnecting").section(QChar(0x2026), 0, 0);
+	const bool ok = row && dot && dot->tone() == (error ? core::Tone::Error : core::Tone::Busy) &&
+			row->statusText().startsWith(prefix) && row->showsStop() == !error;
+	R->check(ok, "dock-row-error-status", row ? row->statusText() : QStringLiteral("no row"));
+}
+
+/* ------------------------------------------------------------------ screenshots */
+
+/* The vertical canvas as an image (what the preview display shows). */
+QImage canvasFrame()
+{
+	obs_canvas_t *canvas = V().canvas();
+	obs_video_info ovi = {};
+	if (!canvas || !obs_canvas_get_video_info(canvas, &ovi) || !ovi.base_width)
+		return QImage();
+	const uint32_t w = ovi.base_width / 2, h = ovi.base_height / 2;
+	QImage out;
+	obs_enter_graphics();
+	gs_texrender_t *tr = gs_texrender_create(GS_BGRA, GS_ZS_NONE);
+	gs_stagesurf_t *stage = gs_stagesurface_create(w, h, GS_BGRA);
+	if (gs_texrender_begin(tr, w, h)) {
+		vec4 clear;
+		vec4_zero(&clear);
+		gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
+		gs_ortho(0.0f, (float)ovi.base_width, 0.0f, (float)ovi.base_height, -100.0f, 100.0f);
+		obs_render_canvas_texture(canvas);
+		gs_texrender_end(tr);
+		gs_stage_texture(stage, gs_texrender_get_texture(tr));
+		uint8_t *data = nullptr;
+		uint32_t linesize = 0;
+		if (gs_stagesurface_map(stage, &data, &linesize)) {
+			out = QImage(data, (int)w, (int)h, (int)linesize, QImage::Format_ARGB32).copy();
+			gs_stagesurface_unmap(stage);
+		}
+	}
+	gs_stagesurface_destroy(stage);
+	gs_texrender_destroy(tr);
+	obs_leave_graphics();
+	return out;
+}
+
+void saveShot(const char *file)
+{
+	const char *dir = getenv("VERTICAL_SELFTEST_SHOTS");
+	QDockWidget *frame = dockFrame();
+	auto *pf = dockChild<ui::PreviewFrame>("previewFrame");
+	if (!dir || !frame || !pf)
+		return;
+	QPixmap shot = frame->grab();
+	QPainter p(&shot);
+	ui::Preview *preview = pf->preview();
+	if (preview->isVisible()) {
+		const QPoint at = preview->mapTo(frame, QPoint(0, 0));
+		p.drawImage(at, preview->snapshot(canvasFrame()));
+	}
+	p.end();
+	QDir().mkpath(QString::fromUtf8(dir));
+	const QString path = QDir(QString::fromUtf8(dir)).filePath(QString::fromUtf8(file));
+	const bool ok = shot.save(path);
+	R->check(ok, "dock-screenshot", QStringLiteral("%1 %2x%3").arg(path).arg(shot.width()).arg(shot.height()));
+}
+
+/* A scene that looks like a vertical show: gradient, a figure and a lower third. */
+QString makeShotImage()
+{
+	QImage img(1080, 1920, QImage::Format_RGB32);
+	QPainter p(&img);
+	p.setRenderHint(QPainter::Antialiasing);
+	QRadialGradient bg(QPointF(540, 576), 1300);
+	bg.setColorAt(0.0, QColor(0x6d, 0x3f, 0xd0));
+	bg.setColorAt(0.55, QColor(0x2a, 0x1a, 0x57));
+	bg.setColorAt(1.0, QColor(0x12, 0x0c, 0x26));
+	p.fillRect(img.rect(), bg);
+	p.setPen(Qt::NoPen);
+	p.setBrush(QColor(0xe8, 0xc9, 0xa8));
+	p.drawEllipse(QPointF(540, 820), 140, 140);
+	p.setBrush(QColor(0x1a, 0x1b, 0x22));
+	p.drawRoundedRect(QRectF(240, 1000, 600, 500), 280, 280);
+	QLinearGradient band(0, 1500, 0, 1920);
+	band.setColorAt(0.0, QColor(91, 44, 200, 0));
+	band.setColorAt(0.35, QColor(91, 44, 200, 217));
+	p.fillRect(QRect(0, 1500, 1080, 420), band);
+	QFont f;
+	f.setPixelSize(110);
+	f.setBold(true);
+	f.setItalic(true);
+	p.setFont(f);
+	p.setPen(Qt::white);
+	p.translate(540, 1720);
+	p.rotate(-3);
+	p.drawText(QRect(-540, -80, 1080, 160), Qt::AlignCenter, QStringLiteral("JUST CHATTING"));
+	p.end();
+	const QString path = QDir::temp().filePath(QStringLiteral("vertical-selftest-shot.png"));
+	img.save(path);
+	return path;
+}
+
+void shotsSetup()
+{
+	Vertical &v = V();
+	if (g.previousScene.isEmpty())
+		g.previousScene = v.currentScene();
+	gd.shotImage = makeShotImage();
+	for (const char *n : {"Talking", "Starting Soon", "Gameplay", "Be Right Back"})
+		gd.shotScenes << v.addScene(QString::fromUtf8(n));
+	OBSSourceAutoRelease sceneSrc = v.sceneSource(gd.shotScenes.front());
+	if (obs_scene_t *scene = obs_scene_from_source(sceneSrc)) {
+		OBSDataAutoRelease s = obs_data_create();
+		obs_data_set_string(s, "file", gd.shotImage.toUtf8().constData());
+		OBSSourceAutoRelease img = obs_source_create_private("image_source", "Selftest Show", s);
+		obs_scene_add(scene, img);
+	}
+	v.setCurrentScene(gd.shotScenes.front());
+	char **names = obs_frontend_get_scene_names();
+	if (names && names[0]) {
+		gd.mainScene = names[0];
+		gd.previousLink = linkOf(names[0]);
+		v.linkScene(QString::fromUtf8(names[0]), gd.shotScenes.front());
+	}
+	bfree(names);
+
+	/* Two destinations live on local servers, two stopped. */
+	const int base = atoi(getenv("VERTICAL_SELFTEST_RTMP_PORT")) + 3;
+	core::Settings &st = v.settings();
+	const struct {
+		core::Platform p;
+		const char *name;
+		bool live;
+	} list[] = {{core::Platform::TikTok, "TikTok LIVE", true},
+		    {core::Platform::YouTube, "YouTube Live", true},
+		    {core::Platform::Instagram, "Instagram Live", false},
+		    {core::Platform::Facebook, "Facebook Live", false}};
+	int port = base;
+	for (const auto &e : list) {
+		const std::string id = core::makeId((unsigned long long)QDateTime::currentMSecsSinceEpoch() +
+							    gd.shotDestinations.size(),
+						    st.destinationIds());
+		core::Destination d = core::makeDestination(e.p, id, e.name);
+		d.streamKey = "test";
+		d.enabled = true;
+		if (e.live)
+			d.server = "rtmp://127.0.0.1:" + std::to_string(port++) + "/live";
+		st.destinations.push_back(d);
+		gd.shotDestinations.push_back(id);
+	}
+	v.settingsEdited();
+	hotkeys::syncDestinations();
+	for (size_t i = 0; i < 2 && i < gd.shotDestinations.size(); i++) {
+		QString error;
+		R->check(O().startDestination(gd.shotDestinations[i], &error), "shots-stream-start", error);
+	}
+	useTempRecordFolder();
+	QString error;
+	R->check(O().startRecording(&error), "shots-record-start", error);
+	dockFloat(660, 800);
+}
+
+void shotsCleanup()
+{
+	O().stopRecording();
+	for (const std::string &id : gd.shotDestinations)
+		O().stopDestination(id);
+}
+
+void shotsRemove()
+{
+	Vertical &v = V();
+	auto &list = v.settings().destinations;
+	list.erase(std::remove_if(list.begin(), list.end(),
+				  [](const core::Destination &d) {
+					  return std::find(gd.shotDestinations.begin(), gd.shotDestinations.end(),
+							   d.id) != gd.shotDestinations.end();
+				  }),
+		   list.end());
+	gd.shotDestinations.clear();
+	v.settingsEdited();
+	hotkeys::syncDestinations();
+	if (!gd.mainScene.empty()) {
+		v.unlinkScene(QString::fromStdString(gd.mainScene));
+		if (!gd.previousLink.isEmpty())
+			v.linkScene(QString::fromStdString(gd.mainScene), gd.previousLink);
+		gd.mainScene.clear();
+	}
+	if (!g.previousScene.isEmpty())
+		v.setCurrentScene(g.previousScene);
+	for (const QString &s : gd.shotScenes)
+		v.removeScene(s);
+	gd.shotScenes.clear();
+	if (!gd.shotImage.isEmpty())
+		QFile::remove(gd.shotImage);
+	dockRestore();
+}
+
 bool enabled(const char *group)
 {
 	const char *only = getenv("VERTICAL_SELFTEST_ONLY");
@@ -839,6 +1450,8 @@ void runSelfTest()
 			g.recordingSaved = false;
 		}
 		V().unlinkScene(QString::fromUtf8(kMainName));
+		dockCloseMenu();
+		dockRestore();
 		restoreDock();
 		if (g.cpu) {
 			os_cpu_usage_info_destroy(g.cpu);
@@ -912,17 +1525,95 @@ void runSelfTest()
 		R->add(300, [] { makeRecordScene(); });
 		R->add(500, [] { multiStart(); });
 		R->waitUntil("multistream-all-live", 10000, [] { return multiAllLive(); });
-		R->add(5000, [] { multiCheck(); });
+		R->add(2500, [] { dockCheckLiveRows(); });
+		R->add(2500, [] { multiCheck(); });
 		R->waitUntil("multistream-stopped", 15000, [] { return !O().anyStreamActive(); });
+		R->add(300, [] { dockCheckRowsStopped(); });
 		R->add(200, [] { multiRemove(); });
 		R->add(200, [] { dropRecordScene(); });
 	}
 	if (enabled("stream")) {
 		R->add(300, [] { streamAdd(); });
 		R->waitUntil("stream-reports-error", 8000, [] { return streamInError(); });
+		R->add(300, [] { dockCheckErrorRow(); });
 		R->add(0, [] { streamReport(); });
 		R->waitUntil("stream-stopped", 10000, [] { return !O().anyStreamActive(); });
 		R->add(200, [] { streamRemove(); });
+	}
+	if (enabled("dock")) {
+		const auto modeIs = [](core::DockMode m) {
+			return [m] {
+				ui::Dock *d = dockWidget();
+				return d && d->mode() == m;
+			};
+		};
+		R->add(200, [] {
+			R->check(ui::iconsAvailable(), "dock-icons-load");
+			dockScenesSetup();
+			dockFloat(700, 820);
+		});
+		R->waitUntil("dock-switches-to-studio", 3000, modeIs(core::DockMode::Studio));
+		R->add(300, [] { dockCheckStudio(); });
+		R->add(0, [] { dockFloat(515, 820); });
+		R->add(600, [] {
+			ui::Dock *d = dockWidget();
+			R->check(d && d->mode() == core::DockMode::Studio, "dock-hysteresis-keeps-studio", widthText());
+		});
+		R->add(0, [] { dockFloat(320, 820); });
+		R->waitUntil("dock-switches-to-compact", 3000, modeIs(core::DockMode::Compact));
+		R->add(300, [] { dockCheckCompact(); });
+		R->add(0, [] { dockWidget()->setLayoutChoice(core::LayoutChoice::Studio); });
+		R->add(300, [] {
+			ui::Dock *d = dockWidget();
+			R->check(d && d->mode() == core::DockMode::Studio, "dock-forced-studio-when-narrow",
+				 widthText());
+			d->setLayoutChoice(core::LayoutChoice::Automatic);
+		});
+		R->add(300, [] {
+			ui::Dock *d = dockWidget();
+			R->check(d && d->mode() == core::DockMode::Compact, "dock-automatic-again", widthText());
+			dockFloat(700, 820);
+		});
+		R->waitUntil("dock-back-to-studio", 3000, modeIs(core::DockMode::Studio));
+		R->add(300, [] { dockClickScene(); });
+		R->waitUntil("dock-scene-click-on-program", 2000, [] { return V().currentScene() == gd.sceneB; });
+		R->add(100, [] { dockCheckSceneOnProgram(); });
+		R->add(200, [] { dockOpenLinkMenu(); });
+		R->waitUntil("dock-link-menu-open", 2000, [] { return openLinkMenu() != nullptr; });
+		R->add(100, [] { dockLinkToggle(true); });
+		R->add(200, [] { dockLinkToggle(false); });
+		R->add(100, [] { dockCloseMenu(); });
+		R->add(200, [] {
+			useTempRecordFolder();
+			dockRecordStart();
+		});
+		R->waitUntil("dock-record-live", 5000, [] { return O().recordingStatus().state == OutputState::Live; });
+		R->add(2500, [] { dockRecordCheckRunning(); });
+		R->waitUntil("dock-record-stopped", 15000, [] { return !O().recordingActive(); });
+		R->add(200, [] { dockRecordCheckStopped(); });
+		R->add(200, [] { dockPreviewChecks(); });
+		R->add(800, [] { dockPreviewWindowCheck(); });
+		R->add(300, [] { dockCleanup(); });
+	}
+	if (getenv("VERTICAL_SELFTEST_SHOTS") && getenv("VERTICAL_SELFTEST_RTMP_PORT")) {
+		R->add(300, [] { shotsSetup(); });
+		R->waitUntil("shots-live", 10000, [] {
+			return gd.shotDestinations.size() >= 2 &&
+			       O().destinationStatus(gd.shotDestinations[0]).state == OutputState::Live &&
+			       O().destinationStatus(gd.shotDestinations[1]).state == OutputState::Live &&
+			       O().recordingStatus().state == OutputState::Live;
+		});
+		R->add(4000, [] { saveShot("studio.png"); });
+		R->add(0, [] { dockFloat(300, 820); });
+		R->waitUntil("shots-compact", 3000, [] {
+			ui::Dock *d = dockWidget();
+			return d && d->mode() == core::DockMode::Compact;
+		});
+		R->add(300, [] { dockFloat(300, 820); });
+		R->add(1200, [] { saveShot("compact.png"); });
+		R->add(0, [] { shotsCleanup(); });
+		R->waitUntil("shots-stopped", 15000, [] { return !O().anyStreamActive() && !O().recordingActive(); });
+		R->add(200, [] { shotsRemove(); });
 	}
 	R->run();
 }

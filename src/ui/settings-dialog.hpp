@@ -18,7 +18,8 @@ class SettingsDialog : public QDialog {
 	Q_OBJECT
 
 public:
-	explicit SettingsDialog(QWidget *parent = nullptr);
+	enum class Tab { Canvas = 0, Destinations = 1, Recording = 2 };
+	explicit SettingsDialog(QWidget *parent = nullptr, Tab tab = Tab::Canvas);
 
 	void accept() override;
 

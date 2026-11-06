@@ -20,11 +20,19 @@ A second OBS 33 canvas, 1080 × 1920 by default (720 × 1280, 1440 × 2560, 2160
 
 ### The Vertical dock
 
-**Docks > Vertical**: a live preview of the vertical program, the list of vertical scenes (add, remove, rename, reorder by dragging, click to put on air) and every output with its status.
+**Docks > Vertical**: a second production space for the vertical output.
+
+- **Studio** layout when the dock is wide (two columns) and **Compact** when it is narrow (one column), chosen by the dock width; the ⋯ menu can force one.
+- Header with the canvas size and frame rate, the **Linked scenes** switch and the ⋯ menu.
+- Live preview with a **LIVE** pill and the aspect tag, a red frame while a destination is live; collapse it, or double-click it to open it in its own window.
+- Vertical scenes: click a row to put it on air (the program scene shows in red with a **PROGRAM** badge), drag to reorder, and the link icon on each row to link it to 16:9 scenes.
+- Destinations with their platform, live status (connecting, live with time and bitrate, reconnecting with the attempt, error, stopped), a start/stop button and ⋯ (edit, duplicate, delete); **Start all** / **Stop all**.
+- Recording, replay buffer and virtual camera: tabs in Studio with a large **Stop Recording** button and timer, three compact lines in Compact.
+- Status bar: shared encoder (hardware or software), outputs live, CPU, version and settings.
 
 ### Linked scenes
 
-Link a 16:9 scene to a vertical scene (↔ in the dock, or from another plugin). With **Linked scenes** on, switching the main program also switches the vertical output. Scenes without a link leave the vertical output where it is.
+Link 16:9 scenes to a vertical scene with the link icon of its row in the dock (a menu with checkmarks; several 16:9 scenes can share one vertical scene), or from another plugin. With **Linked scenes** on, switching the main program also switches the vertical output. Scenes without a link leave the vertical output where it is.
 
 ### Several destinations at once
 

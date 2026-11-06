@@ -23,8 +23,8 @@ if(ENABLE_FRONTEND_API)
 endif()
 
 if(ENABLE_QT)
-  find_package(Qt6 COMPONENTS Widgets Core)
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Qt6::Core Qt6::Widgets)
+  find_package(Qt6 COMPONENTS Widgets Core Svg)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Qt6::Core Qt6::Widgets Qt6::Svg)
   target_compile_options(
     ${CMAKE_PROJECT_NAME}
     PRIVATE $<$<C_COMPILER_ID:Clang,AppleClang>:-Wno-quoted-include-in-framework-header -Wno-comma>
@@ -56,6 +56,8 @@ target_sources(
     src/core/recording.hpp
     src/core/settings.cpp
     src/core/settings.hpp
+    src/core/dock-model.cpp
+    src/core/dock-model.hpp
     src/obs/text.hpp
     src/obs/vertical.cpp
     src/obs/vertical.hpp
@@ -69,6 +71,11 @@ target_sources(
     src/ui/preview.hpp
     src/ui/dock.cpp
     src/ui/dock.hpp
+    src/ui/dock-decisions.hpp
+    src/ui/dock-rows.cpp
+    src/ui/dock-rows.hpp
+    src/ui/dock-style.cpp
+    src/ui/dock-style.hpp
     src/ui/settings-dialog.cpp
     src/ui/settings-dialog.hpp
     src/ui/destination-dialog.cpp

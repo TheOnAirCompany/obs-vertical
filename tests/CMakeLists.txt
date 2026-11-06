@@ -21,6 +21,7 @@ add_executable(
   test-render-gate.cpp
   test-recording.cpp
   test-settings.cpp
+  test-dock-model.cpp
   ${CORE_DIR}/json.cpp
   ${CORE_DIR}/destination.cpp
   ${CORE_DIR}/encoders.cpp
@@ -28,11 +29,12 @@ add_executable(
   ${CORE_DIR}/scene-links.cpp
   ${CORE_DIR}/recording.cpp
   ${CORE_DIR}/settings.cpp
+  ${CORE_DIR}/dock-model.cpp
 )
 target_include_directories(vertical-core-tests PRIVATE "${CORE_DIR}")
 
 if(MSVC)
-  target_compile_options(vertical-core-tests PRIVATE /W4)
+  target_compile_options(vertical-core-tests PRIVATE /W4 /utf-8)
 else()
   target_compile_options(vertical-core-tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()

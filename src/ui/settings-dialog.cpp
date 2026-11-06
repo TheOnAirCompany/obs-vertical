@@ -48,7 +48,7 @@ std::vector<std::string> takenIds(const core::Settings &s)
 
 } // namespace
 
-SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent), work_(Vertical::instance().settings())
+SettingsDialog::SettingsDialog(QWidget *parent, Tab tab) : QDialog(parent), work_(Vertical::instance().settings())
 {
 	setWindowTitle(T("Settings.Title"));
 	setMinimumWidth(520);
@@ -56,6 +56,7 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent), work_(Vertica
 	tabs->addTab(buildCanvasTab(), T("Settings.Canvas"));
 	tabs->addTab(buildDestinationsTab(), T("Settings.Destinations"));
 	tabs->addTab(buildRecordingTab(), T("Settings.Recording"));
+	tabs->setCurrentIndex((int)tab);
 
 	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
 	connect(buttons, &QDialogButtonBox::accepted, this, &SettingsDialog::accept);

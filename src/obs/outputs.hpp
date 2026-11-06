@@ -26,9 +26,21 @@ struct OutputStatus {
 	OutputState state = OutputState::Idle;
 	QString error;
 	uint64_t startedNs = 0;
-	double kbps = 0.0;
+	double kbps = -1.0; /* over the last second; < 0 until measured */
 	int dropped = 0;
 	int total = 0;
+	int attempt = 0; /* reconnect attempt (1-based) while Reconnecting */
+};
+
+/* Encoder shown in the dock footer: the shared video encoder in use, else the one
+ * the next output will use. */
+struct EncoderChip {
+	QString family; /* "VideoToolbox" */
+	bool hardware = false;
+	bool active = false; /* an output uses it now */
+	int encoders = 0;    /* video encoders running */
+	int outputs = 0;     /* outputs sharing them */
+	bool none = false;   /* no usable video encoder */
 };
 
 class Outputs : public QObject {
@@ -36,6 +48,10 @@ class Outputs : public QObject {
 
 public:
 	static Outputs &instance();
+
+	/* Reconnection of the streams: attempts and delay between them. */
+	static constexpr int kReconnectRetries = 25;
+	static constexpr int kReconnectDelaySec = 2;
 
 	/* ---- streaming ---- */
 	bool startDestination(const std::string &id, QString *error);
@@ -70,6 +86,9 @@ public:
 
 	/* "Apple VT H264 Hardware Encoder · 2 video encoders for 3 outputs". */
 	QString encoderSummary() const;
+	EncoderChip encoderChip() const;
+	/* Number of destinations streaming (Live). */
+	int liveStreamCount() const;
 	/* Encoder types and output types found at runtime (logged once). */
 	std::vector<core::EncoderCandidate> videoEncoders() const;
 
