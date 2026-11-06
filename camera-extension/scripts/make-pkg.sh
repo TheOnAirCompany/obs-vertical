@@ -52,7 +52,7 @@ if /usr/bin/systemextensionsctl list 2>/dev/null | grep -q "company.theonair.ver
   user=$(stat -f %Su /dev/console)
   if [ -n "$user" ] && [ "$user" != root ]; then
     launchctl asuser "$(id -u "$user")" sudo -u "$user" \
-      open -a "/Applications/Vertical Camera.app" --args --install --quit-when-done || true
+      open -n -a "/Applications/Vertical Camera.app" --args --install --quit-when-done || true
   fi
 fi
 exit 0
