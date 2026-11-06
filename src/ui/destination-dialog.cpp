@@ -1,5 +1,7 @@
 #include "ui/destination-dialog.hpp"
 
+#include "core/dock-model.hpp"
+#include "obs/audio-mix.hpp"
 #include "obs/outputs.hpp"
 #include "obs/text.hpp"
 
@@ -90,9 +92,14 @@ DestinationDialog::DestinationDialog(const core::Destination &d, QWidget *parent
 	audioKbps_->setValue(d.encoding.audio.bitrateKbps);
 	form->addRow(T("Destination.AudioBitrate"), audioKbps_);
 
-	track_ = new QSpinBox(this);
-	track_->setRange(1, 6);
-	track_->setValue(d.encoding.audio.track);
+	/* The vertical mix (with the exclusions of the Audio settings) unless an expert
+	 * picks a raw OBS track. */
+	track_ = new QComboBox(this);
+	track_->addItem(T("Destination.AudioTrackVertical").arg(AudioMix::instance().track()), 0);
+	for (int t = 1; t <= core::kTrackCount; t++)
+		track_->addItem(T("Destination.AudioTrackN").arg(t), t);
+	const int ti = track_->findData(d.encoding.audio.track);
+	track_->setCurrentIndex(ti < 0 ? 0 : ti);
 	form->addRow(T("Destination.AudioTrack"), track_);
 
 	issues_ = new QLabel(this);
@@ -109,12 +116,28 @@ DestinationDialog::DestinationDialog(const core::Destination &d, QWidget *parent
 	layout->addWidget(buttons);
 
 	connect(platform_, &QComboBox::currentIndexChanged, this, &DestinationDialog::onPlatformChanged);
+	connect(server_, &QLineEdit::textChanged, this, &DestinationDialog::onServerChanged);
 	for (QLineEdit *e : {name_, server_, key_})
 		connect(e, &QLineEdit::textChanged, this, &DestinationDialog::validateNow);
-	for (QSpinBox *s : {videoKbps_, keyint_, audioKbps_, track_})
+	connect(track_, &QComboBox::currentIndexChanged, this, &DestinationDialog::validateNow);
+	for (QSpinBox *s : {videoKbps_, keyint_, audioKbps_})
 		connect(s, &QSpinBox::valueChanged, this, &DestinationDialog::validateNow);
 	connect(codec_, &QComboBox::currentIndexChanged, this, &DestinationDialog::validateNow);
+	onServerChanged();
 	validateNow();
+}
+
+/* A server that names its platform (a TikTok, YouTube, Instagram or Facebook
+ * server, or srt:// for a custom server) selects that platform, so the platform
+ * saved, and the tile of the dock, match the server. */
+void DestinationDialog::onServerChanged()
+{
+	core::Destination probe;
+	probe.platform = core::platformFromId(platform_->currentData().toString().toStdString());
+	probe.server = server_->text().toStdString();
+	const core::Platform want = core::tilePlatform(probe);
+	if (want != probe.platform)
+		platform_->setCurrentIndex(platform_->findData(QString::fromUtf8(core::platformId(want))));
 }
 
 void DestinationDialog::onPlatformChanged()
@@ -145,7 +168,7 @@ core::Destination DestinationDialog::destination() const
 	d.encoding.video.codec = codec_->currentData().toString().toStdString();
 	d.encoding.video.encoder = encoder_->currentData().toString().toStdString();
 	d.encoding.audio.bitrateKbps = audioKbps_->value();
-	d.encoding.audio.track = track_->value();
+	d.encoding.audio.track = track_->currentData().toInt();
 	return d;
 }
 

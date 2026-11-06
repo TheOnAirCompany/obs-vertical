@@ -5,6 +5,7 @@
  * invalid values fall back to defaults and are reported as warnings. */
 
 #include "canvas-size.hpp"
+#include "audio-mix.hpp"
 #include "destination.hpp"
 #include "json.hpp"
 #include "recording.hpp"
@@ -15,13 +16,19 @@
 
 namespace vertical::core {
 
-constexpr int kSettingsVersion = 1;
+/* 2: audio (vertical track, exclusions); encodings on track 0 = the vertical mix. */
+constexpr int kSettingsVersion = 2;
 
 struct CanvasSettings {
 	std::string name = "Vertical";
 	std::string uuid; /* canvas uuid once created; empty before */
 	Size size = defaultCanvasSize();
 	int outputHeight = 0; /* 0 = no downscale */
+};
+
+struct AudioSettings {
+	int track = 0; /* vertical track last used (1..6), 0 before the first choice */
+	AudioExclusions exclusions;
 };
 
 struct Settings {
@@ -35,6 +42,7 @@ struct Settings {
 	RecordingSettings recording;
 	ReplaySettings replay;
 	bool previewVisible = true;
+	AudioSettings audio;
 
 	const Destination *findDestination(const std::string &id) const;
 	Destination *findDestination(const std::string &id);
@@ -47,10 +55,10 @@ enum class KeyMode {
 };
 
 Json destinationToJson(const Destination &d, KeyMode keys);
-Destination destinationFromJson(const Json &j, std::vector<std::string> *warnings);
+Destination destinationFromJson(const Json &j, std::vector<std::string> *warnings, int version = kSettingsVersion);
 
 Json encodingToJson(const EncoderSettings &e);
-EncoderSettings encodingFromJson(const Json &j);
+EncoderSettings encodingFromJson(const Json &j, int version = kSettingsVersion);
 
 Json settingsToJson(const Settings &s, KeyMode keys = KeyMode::Include);
 Settings settingsFromJson(const Json &j, std::vector<std::string> *warnings = nullptr);

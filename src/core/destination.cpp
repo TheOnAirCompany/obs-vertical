@@ -93,6 +93,51 @@ const PlatformInfo &platformInfo(Platform p)
 	return kCustomRtmp;
 }
 
+std::optional<Platform> platformFromServer(const std::string &server)
+{
+	/* Lenient on purpose: a server typed without its scheme still names its platform. */
+	std::string rest = lower(trim(server));
+	std::string scheme;
+	const size_t sep = rest.find("://");
+	if (sep != std::string::npos) {
+		scheme = rest.substr(0, sep);
+		rest = rest.substr(sep + 3);
+	}
+	const size_t end = rest.find_first_of("/:?");
+	const std::string host = end == std::string::npos ? rest : rest.substr(0, end);
+
+	/* Labels of the host: "push-rtmp-l11-va01.tiktokcdn.com" -> first "push-rtmp-l11-va01",
+	 * domain "tiktokcdn" (the label before the top-level one). */
+	std::vector<std::string> labels;
+	size_t start = 0;
+	while (start <= host.size()) {
+		const size_t dot = host.find('.', start);
+		labels.push_back(host.substr(start, dot == std::string::npos ? std::string::npos : dot - start));
+		if (dot == std::string::npos)
+			break;
+		start = dot + 1;
+	}
+	if (labels.size() >= 2) {
+		const std::string &first = labels.front();
+		const std::string &domain = labels[labels.size() - 2];
+		const auto startsWith = [](const std::string &s, const char *prefix) {
+			return s.rfind(prefix, 0) == 0;
+		};
+		if (startsWith(domain, "tiktok"))
+			return Platform::TikTok;
+		if (domain == "youtube" || domain == "youtu")
+			return Platform::YouTube;
+		/* Instagram Live Producer hands out edgetee-upload-<pop>.xx.fbcdn.net servers. */
+		if (domain == "instagram" || domain == "cdninstagram" || startsWith(first, "edgetee-upload"))
+			return Platform::Instagram;
+		if (domain == "facebook" || domain == "fbcdn")
+			return Platform::Facebook;
+	}
+	if (scheme == "srt")
+		return Platform::CustomSrt;
+	return std::nullopt;
+}
+
 int defaultPort(Protocol p)
 {
 	switch (p) {
@@ -364,7 +409,7 @@ std::vector<Issue> validate(const Destination &d)
 		add(IssueCode::CodecNotAllowed, Severity::Error);
 
 	const AudioEncoding &a = d.encoding.audio;
-	if (a.track < 1 || a.track > 6)
+	if (a.track < 0 || a.track > 6)
 		add(IssueCode::AudioTrackInvalid, Severity::Error);
 	if (a.bitrateKbps < 32 || a.bitrateKbps > 512)
 		add(IssueCode::AudioBitrateInvalid, Severity::Error);

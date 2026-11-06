@@ -20,11 +20,19 @@ A second OBS 33 canvas, 1080 × 1920 by default (720 × 1280, 1440 × 2560, 2160
 
 ### The Vertical dock
 
-**Docks > Vertical**: a live preview of the vertical program, the list of vertical scenes (add, remove, rename, reorder by dragging, click to put on air) and every output with its status.
+**Docks > Vertical**: a second production space for the vertical output.
+
+- **Studio** layout when the dock is wide (two columns) and **Compact** when it is narrow (one column), chosen by the dock width; the ⋯ menu can force one.
+- Header with the canvas size and frame rate, the **Linked scenes** switch and the ⋯ menu.
+- Live preview with a **LIVE** pill and the aspect tag, a red frame while a destination is live; collapse it, or double-click it to open it in its own window.
+- Vertical scenes: click a row to put it on air (the program scene shows in red with a **PROGRAM** badge), drag to reorder, and the link icon on each row to link it to 16:9 scenes.
+- Destinations with their platform (the tile follows the server: a TikTok server shows TikTok), live status (connecting, live with time and bitrate, reconnecting with the attempt, error, stopped), a settings button, a ▶ "Go live" / ■ "Stop" button and ⋯ (edit, duplicate, delete); **Start all** / **Stop all**.
+- Recording, replay buffer and virtual camera: tabs in Studio with a large **Stop Recording** button and timer, three compact lines in Compact.
+- Status bar: outputs live, CPU, version and settings, and a warning when the video is encoded by the CPU (no hardware encoder).
 
 ### Linked scenes
 
-Link a 16:9 scene to a vertical scene (↔ in the dock, or from another plugin). With **Linked scenes** on, switching the main program also switches the vertical output. Scenes without a link leave the vertical output where it is.
+Link 16:9 scenes to a vertical scene with the link icon of its row in the dock (a menu with checkmarks; several 16:9 scenes can share one vertical scene), or from another plugin. With **Linked scenes** on, switching the main program also switches the vertical output. Scenes without a link leave the vertical output where it is.
 
 ### Several destinations at once
 
@@ -38,9 +46,15 @@ Record the vertical program in hybrid MP4 (safe if OBS stops unexpectedly), hybr
 
 Hardware encoders first (Apple VideoToolbox on Mac), x264 only when there is no hardware encoder. The vertical scene is rendered **only while something needs it**: an output, the visible preview or the virtual camera. See [Architecture](docs/ARCHITECTURE.md#3-cpu-strategy).
 
-### 9:16 virtual camera (macOS)
+### 9:16 virtual camera and microphone (macOS)
 
 A separate camera, **Vertical Camera**, for TikTok LIVE Studio and other apps, independent from OBS's own virtual camera (which stays on the 16:9 program). It uses a CoreMediaIO camera extension installed by a small companion app. See [Virtual camera](docs/VIRTUAL-CAMERA.md).
+
+With it, a microphone, **Vertical Audio**, carries the vertical mix in real time, aligned with the camera image (an audio/video offset setting and a sync test help check it). See [Vertical Audio](docs/VIRTUAL-AUDIO.md).
+
+### Vertical audio mix
+
+Vertical manages one OBS mixer track for the vertical output: the sources of your main mix, minus the ones you untick in **Settings > Audio** (for example the music, to avoid a copyright strike on TikTok). Mute and volume in the OBS mixer apply to it too. Vertical's streams and recordings use it, and a thin stereo meter under the dock preview shows its level.
 
 ### Hotkeys
 
@@ -53,7 +67,7 @@ Download the file for your system from the [releases](https://github.com/TheOnAi
 | System | File | How to install |
 |---|---|---|
 | macOS 13+ (Apple Silicon and Intel) | `obs-vertical-<version>-macos-universal.pkg` | Open the package and follow the installer (it installs for the current user). Signed and notarized by Apple. |
-| macOS, virtual camera (optional) | `obs-vertical-camera-<version>-macos-universal.pkg` | Installs **Vertical Camera** into Applications. Open it once and click Install, then allow it in System Settings > General > Login Items & Extensions > Camera Extensions (macOS asks once). |
+| macOS, camera and microphone (optional) | `obs-vertical-camera-<version>-macos-universal.pkg` | **Vertical Camera & Audio**: installs **Vertical Camera** into Applications and the **Vertical Audio** microphone driver into /Library/Audio/Plug-Ins/HAL (administrator password; the Mac's sound stops for about a second while the audio system restarts). For the camera, open Vertical Camera once and click Install, then allow it in System Settings > General > Login Items & Extensions > Camera Extensions (macOS asks once). To update, just run the new package: it replaces the camera by itself (macOS asks for Touch ID or the password a few times and to switch the camera on again in Camera Extensions); no Uninstall and no restart. |
 | Windows 10/11 x64 | `obs-vertical-<version>-windows-x64.zip` | Extract the `obs-vertical` folder into `C:\ProgramData\obs-studio\plugins\`. |
 | Ubuntu x86_64 | `obs-vertical-<version>-x86_64-linux-gnu.deb` | `sudo apt install ./obs-vertical-<version>-x86_64-linux-gnu.deb`. Needs the `obs-studio` package **33 or later** installed system-wide. |
 
@@ -68,6 +82,7 @@ To uninstall, remove the plugin. The vertical canvas and its scenes stay in your
 | [Architecture](docs/ARCHITECTURE.md) | Layers, canvas, CPU strategy, outputs, persistence, threads |
 | [Integration](docs/INTEGRATION.md) | Proc handlers for other plugins (`vertical_get_canvas`, `vertical_link_scene`) |
 | [Virtual camera](docs/VIRTUAL-CAMERA.md) | Camera extension design, signing, notarization, Apple Developer steps |
+| [Vertical Audio](docs/VIRTUAL-AUDIO.md) | Vertical mix, audio driver, latency and audio/video offset, sync test and measurement |
 
 ## Building
 

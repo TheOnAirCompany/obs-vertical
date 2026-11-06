@@ -17,21 +17,43 @@ src/core/   pure C++17, no OBS, no Qt          unit-tested (tests/)
   render-gate     reference-counted "who needs the picture" (output/preview/vcam)
   recording       recording formats -> OBS output types (hybrid MP4/MOV, MKV, ...)
   settings        everything saved with a scene collection, JSON (de)serialization
+  dock-model      dock logic: Studio/Compact by width, status lines, bitrate, link menu,
+                  platform tiles (platform from the server URL), virtual camera state,
+                  software encoder warning
+  audio-mix       vertical track choice, "on track 1 AND not excluded", exclusions
+  meter           dB scale, zones and ballistics of the OBS mixer meters
+  sync            audio/video latency model, default offset, offset plan
+  timed-ring      lock-free timestamped audio ring (plugin side of Vertical Audio)
+  loopback-ring   sample-time ring of the Vertical Audio driver
 
 src/obs/    libobs + frontend API, UI thread unless noted
   vertical        the canvas, its scenes, linked scenes, persistence, render gate
   outputs         one obs_output per destination, recording, replay, vcam; encoder pool
   hotkeys         frontend hotkeys (streams, record, replay) and their bindings
   api             proc handlers for other plugins (any thread, see INTEGRATION.md)
-  virtualcam-mac  raw output that feeds the Vertical Camera extension (macOS)
+  virtualcam-mac  raw output that feeds the Vertical Camera extension (macOS), image delay
+  audio-mix       manages the vertical track bits live, lists audio inputs, meter tap
+  av-sync         offset setting (user config), measured lags, current plan (atomics)
+  virtualaudio-mac  plays the vertical mix into the Vertical Audio driver (macOS)
+  sync-test       white flash + beep stamped with the same OBS time
 
 src/ui/     Qt widgets
-  dock            "Vertical" dock: preview, scenes, outputs, status
-  preview         obs_display that draws the canvas texture, letterboxed
-  settings-dialog canvas, destinations, recording/replay
+  dock            "Vertical" dock: header, preview, scenes, destinations, recording /
+                  replay / virtual camera, status bar; Studio and Compact layouts
+  dock-rows       scene list (program row, drag handle, link icon), destination rows
+  dock-style      tokens (sizes, status colours), icons, switch, tiles, chips
+  dock-decisions  one switch per design decision of the dock (see section 9)
+  preview         obs_display that draws the canvas texture, letterboxed, with the
+                  LIVE pill, aspect tag and collapse button drawn in the display;
+                  frame (red while live) and the detached preview window
+  settings-dialog canvas, destinations, recording/replay, audio (sources sent to the
+                  vertical mix, Vertical Camera & Audio offset, sync test)
+  mix-meter       stereo output meter of the vertical mix under the dock preview
   destination-dialog  one destination with live validation
 
-camera-extension/   CoreMediaIO camera extension + host app (Swift), see VIRTUAL-CAMERA.md
+camera-extension/   CoreMediaIO camera extension + host app (Swift), see VIRTUAL-CAMERA.md;
+                    Vertical Audio driver (AudioServerPlugIn, C++) and vertical-sync-measure,
+                    see VIRTUAL-AUDIO.md
 ```
 
 Everything that can be decided without OBS lives in `src/core` and is tested by
@@ -57,8 +79,11 @@ Everything that can be decided without OBS lives in `src/core` and is tested by
 * Program: channel 0 of the canvas is the current vertical scene (straight cut).
 * Audio: the canvas does **not** use `MIX_AUDIO`. OBS has one audio output; a canvas
   with `MIX_AUDIO` would add the sources of the vertical scenes to the main mix as
-  well. Vertical outputs encode the same mix as the main output, on a chosen track
-  (1..6). Vertical-only sounds go on a track that the main output does not use.
+  well. Since 0.3 Vertical manages one mixer track, the **vertical mix**: a source is on
+  it when it is on track 1 (the main mix) and not excluded in Settings > Audio. Vertical's
+  outputs encode it (an explicit track 1..6 can still be chosen per destination), the
+  dock meter shows it, and the Vertical Audio microphone plays it. See
+  [VIRTUAL-AUDIO.md](VIRTUAL-AUDIO.md).
 
 ## 3. CPU strategy
 
@@ -69,8 +94,8 @@ The vertical output must not double the cost of the main output. Five decisions:
    (`com.apple.videotoolbox.videoencoder.ave.avc` / `.ave.hevc` on Apple silicon,
    `.gva` on Intel Macs), other hardware encoders (NVENC, AMF, QSV, VA-API on other
    systems), then hardware H.264 when HEVC was asked but only H.264 has hardware, and
-   **x264 only when no hardware encoder exists** (logged as a warning, shown in the
-   dock). Audio uses CoreAudio AAC on macOS, then FFmpeg AAC.
+   **x264 only when no hardware encoder exists** (logged as a warning, marked "(CPU)"
+   in the encoder list of the destination dialog). Audio uses CoreAudio AAC on macOS, then FFmpeg AAC.
 
 2. **One encoder per distinct setting, not per output.** The encoder pool is keyed by
    the canonical text of the settings (`EncoderSettings::videoKey()` /
@@ -180,7 +205,10 @@ VERTICAL_SELFTEST=1 VERTICAL_SELFTEST_QUIT=1 /Applications/OBS.app/Contents/MacO
 ```
 
 * `VERTICAL_SELFTEST_QUIT=1` closes OBS when done.
-* `VERTICAL_SELFTEST_ONLY=canvas,scenes,gate,record,stream` runs only those groups.
+* `VERTICAL_SELFTEST_ONLY=canvas,scenes,gate,record,multistream,stream,dock,audio,vaudio,audioshots` runs only those groups (`measure` runs only when named).
+* `VERTICAL_SELFTEST_SHOTS=<dir>` saves `studio.png` and `compact.png` of the dock (with two
+  destinations live on local servers and a recording running); needs
+  `VERTICAL_SELFTEST_RTMP_PORT` and two more listeners at `+3` and `+4`.
 
 | Group | What it checks |
 | --- | --- |
@@ -188,7 +216,12 @@ VERTICAL_SELFTEST=1 VERTICAL_SELFTEST_QUIT=1 /Applications/OBS.app/Contents/MacO
 | `scenes` | Add a scene with a colour source, make it current, it is on channel 0 while the gate is held, link it; rename it (list, order, current scene and link follow, a taken name is refused); remove it (link dropped, current scene moves, source gone). |
 | `gate` | With the dock preview hidden and no output, channel 0 is empty; a recording puts the current scene on it; it is empty again after the stop. |
 | `record` | 3 s recording of a moving noise image into `$TMPDIR/vertical-selftest`; logs the encoder actually used and checks it is the plugin's choice (hardware when available); the file exists and is over 50 KB. Then recording + replay buffer together share one video encoder and one audio encoder. |
-| `stream` | A destination to `rtmp://127.0.0.1:1/live` (key `test`) reports an error or reconnect state within 8 s, stops, and is removed. |
+| `stream` | A destination to `rtmp://127.0.0.1:1/live` (key `test`) reports an error or reconnect state within 8 s, and its dock row shows it (dot, text, ▶ / ■); it stops and is removed. |
+| `audio` | A 16:9 scene with a 1 kHz tone source and a silent one: the vertical track is free in OBS's output settings; both sources are listed and on the vertical track by default; excluding one clears only its vertical bit, a user change of its tracks keeps the rule and the other tracks, including it again sets the bit, a source off track 1 is off the vertical track; the tone is heard in the vertical mix, not when muted in the main mixer, not when excluded (still in the main mix); the dock meter under the preview gets levels; a recording's audio encoder is on the vertical track; the sync test draws the flash on the expected number of frames, the beep is in the vertical mix only, the event file is written, everything is cleaned up; offsets: negative delays the image by whole frames plus the rest on the audio, positive delays the audio, automatic follows the default; exclusions (per collection) and the offset (per machine) survive a switch to another collection and back. |
+| `vaudio` | With the Vertical Audio driver installed: the plugin feeds it (chunks, underruns, IO buffer) and logs `[selftest] PERF vaudio schedule_ms=…`; without the driver: idle. |
+| `measure` | Only when asked by name: keeps OBS ready for `vertical-sync-measure` (remote sync tests on, virtual camera started, offset from `VERTICAL_SELFTEST_OFFSET`, `auto` or ms), logs `[selftest] PERF measure …` (lags, paths, default and effective offset) every 5 s, ends when `$TMPDIR/vertical-measure-done` exists or after `VERTICAL_SELFTEST_MEASURE_SECS` (120). |
+| `audioshots` | With `VERTICAL_SELFTEST_SHOTS`: `studio-meter.png`, `compact-meter.png` (the meter with a tone playing) and `settings-audio.png`. |
+| `dock` | The dock floated and resized: Studio at 700 px (header chip, preview, scenes section, Start all / Stop all, destinations, tabs, footer, 32 px rows), still Studio just under the threshold (hysteresis), Compact at 320 px (no section headers, three lines, 28 px rows); forced layout from the ⋯ menu choice; a click on a scene row puts it on program; the link icon of a row opens the link menu; the link menu, opened straight from the dock and used at once, links and unlinks a 16:9 scene (model, row icon, menu state), and with Linked scenes on the linked 16:9 scene on program switches the vertical output (not once unlinked); Start / Stop Recording in the Recording tab (timer, Compact line); preview collapse and detached preview window; no encoder chip in the footer, and the software encoder warning hidden with VideoToolbox, shown while a recording forced to x264 runs, hidden after; destination rows in Studio and Compact: tile from the platform or the server (a row saved as Instagram with a TikTok server shows TikTok, srt:// shows SRT), a 28 px settings button before ▶ / ■ with the "Settings" and "Go live on …" tooltips, the settings button opens the destination dialog, every platform survives the dialog, a TikTok server selects TikTok, and + Add destination > TikTok saves a TikTok destination with the TikTok tile. |
 
 The log (`~/Library/Application Support/obs-studio/logs`) gets one line per check,
 `[selftest] PASS|FAIL <name> <detail>`, a CPU sample taken during the recording,
@@ -204,7 +237,43 @@ for i in 1 2 3; do ffmpeg -listen 1 -i rtmp://127.0.0.1:$((19350+i))/live/test -
 VERTICAL_SELFTEST=1 VERTICAL_SELFTEST_ONLY=multistream VERTICAL_SELFTEST_RTMP_PORT=19351 OBS
 ```
 
-It starts three destinations at once, waits until all are live, then checks that they share
-one video encoder and send frames without drops, and logs `[selftest] PERF multistream ...`
+It starts three destinations at once, waits until all are live, checks their dock rows
+("Live · 00:00:02 · 6.0 Mbps", ■, red dot), the live count and the red preview frame, then
+checks that they share one video encoder and send frames without drops, and logs `[selftest] PERF multistream ...`
 (process CPU, lagged frames). Measured on Apple silicon: 3 × 1080x1920 at 30 fps with the
 VideoToolbox hardware encoder, 1.9 % CPU, 0 dropped frames.
+
+## 9. The dock
+
+Two layouts, picked by `core::chooseDockMode`: **Studio** (two columns: preview and
+scenes on the left, 220 px; destinations and the Recording | Replay Buffer | Virtual
+Camera tabs on the right) from 520 px wide, **Compact** (one column: preview, scenes,
+destinations, three lines) below, with a 16 px hysteresis. The ⋯ menu can force one
+(saved in the OBS user config, `[Vertical] DockLayout`).
+
+* Header: canvas size and frame rate, the "Linked scenes" switch, ⋯.
+* Preview: LIVE pill and aspect tag drawn inside the display (a native surface cannot
+  host widgets), red frame while a destination is live, collapse button, double-click
+  for a detached window.
+* Scenes: the program scene in red tint with a PROGRAM badge, drag handle, link icon
+  on each row. The link icon opens a menu of the 16:9 scenes with checkmarks (several
+  16:9 scenes can follow one vertical scene; checking a 16:9 scene linked elsewhere
+  moves its link).
+* Destinations: platform tile (colours and glyphs drawn in code), status line from the
+  output signals ("Live · 00:12:34 · 6.0 Mbps", "Connecting…", "Reconnecting 2/25…",
+  "Error: …", "Stopped"), settings (opens the destination dialog), ▶ "Go live on …" /
+  ■ "Stop" and ⋯ (Edit, Duplicate, Delete). The tile shows the platform the server
+  points to (`core::tilePlatform`: TikTok, YouTube, Instagram, Facebook hosts, srt://),
+  else the saved platform; the dialog selects that platform when the server is typed.
+  Bitrate: delta of `obs_output_get_total_bytes` over the last second; uptime from the
+  `start` signal.
+* Status bar: outputs live, process CPU (`os_cpu_usage_info`), version and settings; an
+  amber "Software encoder (CPU)" warning only while the vertical video is encoded by the
+  CPU (x264), or when no hardware encoder exists (`core::showSoftwareEncoderWarning`).
+
+Colours follow the OBS theme palette; status colours are fixed (red `#E5484D` live or
+error, amber `#E3A748` connecting or waiting, green `#30A46C` ready, grey stopped).
+Every decision of the design review is a constant in `src/ui/dock-decisions.hpp`;
+the other sizes (in `dock-style.hpp`, `dock.cpp` and `core/dock-model.hpp`) were validated
+on the review of 7 November 2026. Under 260 px of row width, the PROGRAM badge of the scene
+on air becomes a red dot so that the scene name stays readable.

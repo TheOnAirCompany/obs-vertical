@@ -1,18 +1,24 @@
 #include "ui/settings-dialog.hpp"
 
+#include "obs/audio-mix.hpp"
+#include "obs/av-sync.hpp"
 #include "obs/hotkeys.hpp"
 #include "obs/outputs.hpp"
+#include "obs/sync-test.hpp"
 #include "obs/text.hpp"
 #include "obs/vertical.hpp"
+#include "obs/virtualaudio.hpp"
 #include "ui/destination-dialog.hpp"
 
 #include <util/platform.h>
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDateTime>
 #include <QDialogButtonBox>
 #include <QFileDialog>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -20,13 +26,23 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSpinBox>
 #include <QTabWidget>
+#include <QTimer>
 #include <QVBoxLayout>
 
 namespace vertical::ui {
 
 namespace {
+
+/* dialog width and layout of the Audio tab (OBS's own settings use
+ * plain forms). */
+constexpr int kDialogMinWidth = 600;
+constexpr int kDialogMinHeight = 760; /* the Audio tab and its wrapped notes fit */
+constexpr int kAudioListMinHeight = 160;
+constexpr int kAudioListPadding = 8;
+constexpr int kOffsetFieldWidth = 110;
 
 QString destinationLabel(const core::Destination &d)
 {
@@ -48,14 +64,18 @@ std::vector<std::string> takenIds(const core::Settings &s)
 
 } // namespace
 
-SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent), work_(Vertical::instance().settings())
+SettingsDialog::SettingsDialog(QWidget *parent, Tab tab) : QDialog(parent), work_(Vertical::instance().settings())
 {
 	setWindowTitle(T("Settings.Title"));
-	setMinimumWidth(520);
+	setMinimumSize(kDialogMinWidth, kDialogMinHeight);
 	auto *tabs = new QTabWidget(this);
 	tabs->addTab(buildCanvasTab(), T("Settings.Canvas"));
 	tabs->addTab(buildDestinationsTab(), T("Settings.Destinations"));
 	tabs->addTab(buildRecordingTab(), T("Settings.Recording"));
+	tabs->addTab(buildAudioTab(), T("Settings.Audio"));
+	tabs->setCurrentIndex((int)tab);
+	/* vertical-sync-measure may trigger the sync test while this dialog is open. */
+	synctest::setRemoteTrigger(true);
 
 	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
 	connect(buttons, &QDialogButtonBox::accepted, this, &SettingsDialog::accept);
@@ -64,6 +84,20 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent), work_(Vertica
 	auto *layout = new QVBoxLayout(this);
 	layout->addWidget(tabs);
 	layout->addWidget(buttons);
+}
+
+SettingsDialog::~SettingsDialog()
+{
+	synctest::setRemoteTrigger(false);
+}
+
+void SettingsDialog::reject()
+{
+	/* A sync test applied the offset being edited: put the saved one back. */
+	const avsync::Config now = avsync::config();
+	if (now.automatic != initialSync_.automatic || now.offsetMs != initialSync_.offsetMs)
+		avsync::setConfig(initialSync_);
+	QDialog::reject();
 }
 
 /* ---------------------------------------------------------------- canvas */
@@ -282,6 +316,166 @@ QWidget *SettingsDialog::buildRecordingTab()
 	return w;
 }
 
+/* ---------------------------------------------------------------- audio */
+
+QWidget *SettingsDialog::buildAudioTab()
+{
+	auto *w = new QWidget(this);
+	auto *layout = new QVBoxLayout(w);
+
+	/* ---- the vertical mix ---- */
+	auto *mix = new QGroupBox(T("Audio.MixTitle"), w);
+	auto *mixLayout = new QVBoxLayout(mix);
+	audioTrack_ = new QLabel(mix);
+	audioTrack_->setObjectName(QStringLiteral("verticalAudioTrack"));
+	audioTrack_->setWordWrap(true);
+	mixLayout->addWidget(audioTrack_);
+	auto *listTitle = new QLabel(T("Audio.SourcesTitle"), mix);
+	mixLayout->addWidget(listTitle);
+	/* One OBS-style checkbox per source, in a scroll area. */
+	audioScroll_ = new QScrollArea(mix);
+	audioScroll_->setWidgetResizable(true);
+	audioScroll_->setMinimumHeight(kAudioListMinHeight);
+	audioSources_ = new QWidget(audioScroll_);
+	audioSources_->setObjectName(QStringLiteral("verticalAudioSources"));
+	audioSourcesLayout_ = new QVBoxLayout(audioSources_);
+	audioSourcesLayout_->setContentsMargins(kAudioListPadding, kAudioListPadding, kAudioListPadding,
+						kAudioListPadding);
+	audioScroll_->setWidget(audioSources_);
+	mixLayout->addWidget(audioScroll_, 1);
+	auto *mixNote = new QLabel(T("Audio.MixNote"), mix);
+	mixNote->setWordWrap(true);
+	mixLayout->addWidget(mixNote);
+	layout->addWidget(mix, 1);
+
+	/* ---- Vertical Camera & Audio ---- */
+	/* "&" would be read as a mnemonic in a group box title. */
+	auto *pair = new QGroupBox(T("Audio.PairTitle").replace(QStringLiteral("&"), QStringLiteral("&&")), w);
+	auto *form = new QVBoxLayout(pair);
+	audioStatus_ = new QLabel(pair);
+	audioStatus_->setObjectName(QStringLiteral("verticalAudioStatus"));
+	audioStatus_->setWordWrap(true);
+	form->addWidget(audioStatus_);
+
+	auto *offsetRow = new QHBoxLayout();
+	offset_ = new QSpinBox(pair);
+	offset_->setObjectName(QStringLiteral("verticalSyncOffset"));
+	offset_->setRange(core::kMinOffsetMs, core::kMaxOffsetMs);
+	offset_->setSuffix(QStringLiteral(" ms"));
+	offset_->setMinimumWidth(kOffsetFieldWidth);
+	offsetDefault_ = new QPushButton(T("Audio.OffsetDefault"), pair);
+	offsetDefault_->setObjectName(QStringLiteral("verticalSyncOffsetDefault"));
+	offsetRow->addWidget(new QLabel(T("Audio.Offset"), pair));
+	offsetRow->addWidget(offset_);
+	offsetRow->addWidget(offsetDefault_);
+	offsetRow->addStretch(1);
+	form->addLayout(offsetRow);
+	offsetNote_ = new QLabel(pair);
+	offsetNote_->setWordWrap(true);
+	form->addWidget(offsetNote_);
+
+	auto *testRow = new QHBoxLayout();
+	syncTest_ = new QPushButton(T("Audio.SyncTest"), pair);
+	syncTest_->setObjectName(QStringLiteral("verticalSyncTest"));
+	syncNote_ = new QLabel(T("Audio.SyncTestNote"), pair);
+	syncNote_->setWordWrap(true);
+	testRow->addWidget(syncTest_);
+	testRow->addWidget(syncNote_, 1);
+	form->addLayout(testRow);
+	layout->addWidget(pair);
+
+	const avsync::Config cfg = avsync::config();
+	initialSync_ = cfg;
+	offsetAutomatic_ = cfg.automatic;
+	offset_->setValue(cfg.automatic ? avsync::effectiveOffsetMs() : cfg.offsetMs);
+	connect(offset_, &QSpinBox::valueChanged, this, [this] {
+		if (updatingOffset_)
+			return;
+		offsetAutomatic_ = false;
+		updateOffsetNote();
+	});
+	connect(offsetDefault_, &QPushButton::clicked, this, [this] {
+		offsetAutomatic_ = true;
+		updatingOffset_ = true;
+		offset_->setValue(avsync::effectiveOffsetMs());
+		updatingOffset_ = false;
+		updateOffsetNote();
+	});
+	connect(syncTest_, &QPushButton::clicked, this, [this] {
+		/* The offset being edited applies at once, so the test shows it. */
+		avsync::setConfig({offsetAutomatic_, offset_->value()});
+		synctest::trigger();
+	});
+	connect(&AudioMix::instance(), &AudioMix::sourcesChanged, this, &SettingsDialog::refreshAudioSources);
+	connect(&AudioMix::instance(), &AudioMix::trackChanged, this, &SettingsDialog::refreshAudioSources);
+	auto *poll = new QTimer(this);
+	poll->setInterval(1000);
+	connect(poll, &QTimer::timeout, this, &SettingsDialog::refreshAudioStatus);
+	poll->start();
+
+	refreshAudioSources();
+	refreshAudioStatus();
+	updateOffsetNote();
+	return w;
+}
+
+void SettingsDialog::refreshAudioSources()
+{
+	AudioMix &mix = AudioMix::instance();
+	audioTrack_->setText(T("Audio.Track").arg(mix.track()));
+	const auto rows = core::audioRows(mix.mainSources(), work_.audio.exclusions);
+	while (QLayoutItem *it = audioSourcesLayout_->takeAt(0)) {
+		delete it->widget();
+		delete it;
+	}
+	for (const core::AudioRow &r : rows) {
+		auto *box = new QCheckBox(QString::fromStdString(r.name), audioSources_);
+		box->setChecked(r.sent && r.onMainMix);
+		box->setEnabled(r.onMainMix);
+		box->setToolTip(r.onMainMix ? T("Audio.SentTip") : T("Audio.NotOnMainMix"));
+		const std::string uuid = r.uuid;
+		connect(box, &QCheckBox::toggled, this,
+			[this, uuid](bool on) { work_.audio.exclusions.setExcluded(uuid, !on); });
+		audioSourcesLayout_->addWidget(box);
+	}
+	if (rows.empty())
+		audioSourcesLayout_->addWidget(new QLabel(T("Audio.NoSources"), audioSources_));
+	audioSourcesLayout_->addStretch(1);
+}
+
+void SettingsDialog::refreshAudioStatus()
+{
+	const virtualaudio::Stats s = virtualaudio::stats();
+	QString text;
+	if (!s.installed)
+		text = T("Audio.Status.NotInstalled");
+	else if (s.feeding)
+		text = T("Audio.Status.Feeding").arg(qRound(s.scheduleMs + s.audioDelayMs));
+	else
+		text = T("Audio.Status.Idle");
+	audioStatus_->setText(
+		QStringLiteral("<b>%1</b> · %2").arg(T("Audio.Microphone").toHtmlEscaped(), text.toHtmlEscaped()));
+	if (offsetAutomatic_) {
+		updatingOffset_ = true;
+		offset_->setValue(avsync::effectiveOffsetMs());
+		updatingOffset_ = false;
+	}
+	updateOffsetNote();
+}
+
+void SettingsDialog::updateOffsetNote()
+{
+	const bool measured = avsync::audioMeasured() || avsync::videoMeasured();
+	const int d = avsync::defaultOffsetMs();
+	const QString value = (d > 0 ? QStringLiteral("+") : QString()) + QString::number(d);
+	offsetNote_->setText(T("Audio.OffsetNote")
+				     .arg(value)
+				     .arg(core::kAutoThresholdMs)
+				     .arg(measured ? T("Audio.OffsetMeasured") : T("Audio.OffsetEstimated")) +
+			     (offsetAutomatic_ ? QStringLiteral(" ") + T("Audio.OffsetAutomatic") : QString()));
+	offsetDefault_->setEnabled(!offsetAutomatic_);
+}
+
 /* ---------------------------------------------------------------- apply */
 
 void SettingsDialog::accept()
@@ -303,6 +497,9 @@ void SettingsDialog::accept()
 
 	/* Copy everything except what the canvas owns (applied below). */
 	core::Settings &s = v.settings();
+	if (work_.audio.exclusions != s.audio.exclusions)
+		AudioMix::instance().setExclusions(work_.audio.exclusions);
+	avsync::setConfig({offsetAutomatic_, offset_->value()});
 	s.destinations = work_.destinations;
 	s.recording = work_.recording;
 	s.replay = work_.replay;

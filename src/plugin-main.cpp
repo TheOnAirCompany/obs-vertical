@@ -26,9 +26,13 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <cstdlib>
 
 #include "obs/api.hpp"
+#include "obs/audio-mix.hpp"
+#include "obs/av-sync.hpp"
 #include "obs/hotkeys.hpp"
 #include "obs/outputs.hpp"
+#include "obs/sync-test.hpp"
 #include "obs/vertical.hpp"
+#include "obs/virtualaudio.hpp"
 #ifdef VERTICAL_VIRTUALCAM
 #include "obs/virtualcam.hpp"
 #endif
@@ -74,8 +78,24 @@ void onFrontendEvent(enum obs_frontend_event event, void *)
 	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED:
 		v.onCollectionReady();
 		vertical::hotkeys::syncDestinations();
+		vertical::AudioMix::instance().refresh();
+		if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING) {
+			vertical::avsync::update();
+			vertical::virtualaudio::start();
+			if (getenv("VERTICAL_SYNC_REMOTE"))
+				vertical::synctest::setRemoteTrigger(true);
+		}
+		break;
+	case OBS_FRONTEND_EVENT_PROFILE_CHANGED:
+	case OBS_FRONTEND_EVENT_STREAMING_STARTING:
+	case OBS_FRONTEND_EVENT_RECORDING_STARTING:
+		/* OBS's own outputs may now use the vertical track: choose again. */
+		vertical::AudioMix::instance().refresh();
 		break;
 	case OBS_FRONTEND_EVENT_EXIT:
+		vertical::virtualaudio::shutdown();
+		vertical::synctest::shutdown();
+		vertical::AudioMix::instance().shutdown();
 		vertical::Outputs::instance().stopEverything();
 		vertical::hotkeys::unregisterAll();
 		v.shutdown();
@@ -107,6 +127,10 @@ bool obs_module_load(void)
 	auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
 
 	vertical::Vertical::instance().start();
+	vertical::AudioMix::instance().start();
+	vertical::synctest::registerSources();
+	QObject::connect(&vertical::AudioMix::instance(), &vertical::AudioMix::trackChanged,
+			 [](int) { vertical::virtualaudio::trackChanged(); });
 	vertical::api::registerProcs();
 #ifdef VERTICAL_VIRTUALCAM
 	vertical::virtualcam::registerOutput();

@@ -3,6 +3,7 @@
 /* Streaming destinations of the vertical output: model, URL parsing and
  * validation. Pure C++17 (no OBS): unit-tested in tests/test-destination.cpp. */
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,12 @@ struct PlatformInfo {
 	int maxKbps; /* soft limit: above it the platform may refuse or re-encode */
 };
 const PlatformInfo &platformInfo(Platform p);
+
+/* Platform a server URL points to, from its host: TikTok (tiktok*.com, e.g.
+ * push-rtmp-l11-va01.tiktokcdn.com), YouTube (*.youtube.com), Instagram
+ * (*.instagram.com, edgetee-upload-*.fbcdn.net), Facebook (*.facebook.com,
+ * other *.fbcdn.net), else SRT for an srt:// URL. Empty for any other server. */
+std::optional<Platform> platformFromServer(const std::string &server);
 
 struct StreamUrl {
 	bool valid = false;
@@ -59,7 +66,7 @@ struct VideoEncoding {
 
 struct AudioEncoding {
 	int bitrateKbps = 160;
-	int track = 1; /* 1..6, the OBS audio mixer track */
+	int track = 0; /* 0 = the vertical mix (the track Vertical manages), 1..6 = that OBS mixer track */
 
 	bool operator==(const AudioEncoding &o) const { return bitrateKbps == o.bitrateKbps && track == o.track; }
 	bool operator!=(const AudioEncoding &o) const { return !(*this == o); }

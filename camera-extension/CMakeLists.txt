@@ -1,4 +1,5 @@
-# Vertical Camera: CoreMediaIO Camera Extension + its host app (macOS 13+).
+# Vertical Camera & Audio (macOS 13+): the CoreMediaIO Camera Extension and its host
+# app, the Vertical Audio driver (AudioServerPlugIn) and the sync measurement tool.
 #
 # Standalone:
 #   cmake -S camera-extension -B build_camera -G Xcode \
@@ -16,9 +17,10 @@
 cmake_minimum_required(VERSION 3.28...3.30)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-  project(vertical-camera LANGUAGES C Swift)
+  project(vertical-camera LANGUAGES C CXX Swift)
 else()
   enable_language(Swift)
+  enable_language(CXX)
 endif()
 
 if(NOT APPLE OR NOT CMAKE_GENERATOR STREQUAL "Xcode")
@@ -33,23 +35,28 @@ set(VERTICAL_CAMERA_EXT_ID "company.theonair.vertical-camera.extension" CACHE ST
 set(VERTICAL_CAMERA_DEVICE_UUID "D0378109-93F1-4BA1-A12A-5C7B7B9BC58E")
 set(VERTICAL_CAMERA_SOURCE_UUID "E4C44F98-E06C-4F3B-8969-3EA833FB7C8C")
 set(VERTICAL_CAMERA_SINK_UUID "1EDE1E2A-B0A8-4816-BE2D-67793D1904D2")
+# Vertical Audio driver (device UIDs: src/core/audio-device-ids.hpp).
+set(VERTICAL_AUDIO_DRIVER_ID "company.theonair.vertical-audio" CACHE STRING "Bundle id of the audio driver")
+set(VERTICAL_AUDIO_FACTORY_UUID "7FA6C826-F230-4CFF-9B15-92D130BB9B32")
 
 # ---- signing -------------------------------------------------------------------------
 set(CODESIGN_IDENTITY "" CACHE STRING "Signing identity, e.g. 'Developer ID Application: Rise (Apps) (562LS75A65)'")
-set(VERTICAL_CAMERA_PROFILE_HOST
-    ""
-    CACHE STRING
-    "Developer ID provisioning profile of the host app: an installed profile name/UUID or a .provisionprofile path"
+set(
+  VERTICAL_CAMERA_PROFILE_HOST
+  ""
+  CACHE STRING
+  "Developer ID provisioning profile of the host app: an installed profile name/UUID or a .provisionprofile path"
 )
-set(VERTICAL_CAMERA_PROFILE_EXT
-    ""
-    CACHE STRING
-    "Developer ID provisioning profile of the extension: an installed profile name/UUID or a .provisionprofile path"
+set(
+  VERTICAL_CAMERA_PROFILE_EXT
+  ""
+  CACHE STRING
+  "Developer ID provisioning profile of the extension: an installed profile name/UUID or a .provisionprofile path"
 )
 
 # ---- version ----------------------------------------------------------------------------
 set(VERTICAL_CAMERA_VERSION "0.1.0")
-set(VERTICAL_CAMERA_BUILD "1")
+set(VERTICAL_CAMERA_BUILD "5")
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../buildspec.json")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../buildspec.json" _buildspec)
   string(JSON VERTICAL_CAMERA_VERSION GET "${_buildspec}" version)
@@ -60,6 +67,7 @@ configure_file(cmake/extension-Info.plist.in "${_gen}/extension-Info.plist" @ONL
 configure_file(cmake/app-Info.plist.in "${_gen}/app-Info.plist" @ONLY)
 configure_file(cmake/extension.entitlements.in "${_gen}/extension.entitlements" @ONLY)
 configure_file(cmake/app.entitlements.in "${_gen}/app.entitlements" @ONLY)
+configure_file(cmake/driver-Info.plist.in "${_gen}/driver-Info.plist" @ONLY)
 
 # Applies signing settings to a target. A profile given as a file path is embedded by
 # hand (Contents/embedded.provisionprofile) before Xcode signs the bundle; a profile
@@ -125,8 +133,13 @@ set_target_properties(
 )
 target_link_libraries(
   vertical-camera-extension
-  PRIVATE "-framework CoreMediaIO" "-framework CoreMedia" "-framework CoreVideo" "-framework VideoToolbox"
-          "-framework AppKit" "-framework IOKit"
+  PRIVATE
+    "-framework CoreMediaIO"
+    "-framework CoreMedia"
+    "-framework CoreVideo"
+    "-framework VideoToolbox"
+    "-framework CoreText"
+    "-framework IOKit"
 )
 _vertical_camera_signing(vertical-camera-extension "${_gen}/extension.entitlements" "${VERTICAL_CAMERA_PROFILE_EXT}")
 
@@ -142,7 +155,10 @@ set_target_properties(
     XCODE_ATTRIBUTE_SWIFT_VERSION 5.0
     XCODE_ATTRIBUTE_MACOSX_DEPLOYMENT_TARGET 13.0
 )
-target_link_libraries(vertical-camera-app PRIVATE "-framework AppKit" "-framework SystemExtensions")
+target_link_libraries(
+  vertical-camera-app
+  PRIVATE "-framework AppKit" "-framework SystemExtensions" "-framework AVFoundation"
+)
 add_dependencies(vertical-camera-app vertical-camera-extension)
 
 # Embed the extension: Contents/Library/SystemExtensions/<bundle id>.systemextension.
@@ -150,10 +166,51 @@ add_dependencies(vertical-camera-app vertical-camera-extension)
 add_custom_command(
   TARGET vertical-camera-app
   POST_BUILD
-  COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_BUNDLE_CONTENT_DIR:vertical-camera-app>/Library/SystemExtensions"
+  COMMAND
+    "${CMAKE_COMMAND}" -E make_directory "$<TARGET_BUNDLE_CONTENT_DIR:vertical-camera-app>/Library/SystemExtensions"
   COMMAND
     "${CMAKE_COMMAND}" -E copy_directory "$<TARGET_BUNDLE_DIR:vertical-camera-extension>"
     "$<TARGET_BUNDLE_CONTENT_DIR:vertical-camera-app>/Library/SystemExtensions/$<TARGET_BUNDLE_DIR_NAME:vertical-camera-extension>"
   COMMENT "Embedding the Vertical Camera extension in the host app"
 )
 _vertical_camera_signing(vertical-camera-app "${_gen}/app.entitlements" "${VERTICAL_CAMERA_PROFILE_HOST}")
+
+# ---- the Vertical Audio driver (AudioServerPlugIn) ---------------------------------------
+# VerticalAudio.driver, installed into /Library/Audio/Plug-Ins/HAL and loaded by
+# coreaudiod. Needs no entitlement and no provisioning profile: Developer ID signature,
+# hardened runtime and secure timestamp. See docs/VIRTUAL-AUDIO.md.
+add_library(vertical-audio-driver MODULE audio-driver/VerticalAudio.cpp)
+target_include_directories(vertical-audio-driver PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src/core")
+set_target_properties(
+  vertical-audio-driver
+  PROPERTIES
+    BUNDLE ON
+    BUNDLE_EXTENSION driver
+    OUTPUT_NAME VerticalAudio
+    MACOSX_BUNDLE_INFO_PLIST "${_gen}/driver-Info.plist"
+    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${VERTICAL_AUDIO_DRIVER_ID}"
+    XCODE_ATTRIBUTE_MACOSX_DEPLOYMENT_TARGET 13.0
+    XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD c++17
+    XCODE_ATTRIBUTE_GCC_SYMBOLS_PRIVATE_EXTERN YES
+    XCODE_ATTRIBUTE_SKIP_INSTALL YES
+)
+target_link_libraries(vertical-audio-driver PRIVATE "-framework CoreAudio" "-framework CoreFoundation")
+_vertical_camera_signing(vertical-audio-driver "" "")
+
+# ---- sync measurement tool (development, not shipped) --------------------------------
+# Opens "Vertical Camera" and "Vertical Audio", triggers the Sync test of the plugin and
+# prints the measured audio/video offset and latencies. See docs/VIRTUAL-AUDIO.md.
+add_executable(vertical-sync-measure tools/sync-measure/main.swift)
+set_target_properties(
+  vertical-sync-measure
+  PROPERTIES
+    XCODE_ATTRIBUTE_SWIFT_VERSION 5.0
+    XCODE_ATTRIBUTE_MACOSX_DEPLOYMENT_TARGET 13.0
+    XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "-"
+    XCODE_ATTRIBUTE_CODE_SIGN_STYLE Manual
+    XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME NO
+)
+target_link_libraries(
+  vertical-sync-measure
+  PRIVATE "-framework AVFoundation" "-framework CoreMedia" "-framework CoreVideo" "-framework CoreAudio"
+)

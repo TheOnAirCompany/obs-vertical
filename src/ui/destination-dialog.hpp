@@ -24,6 +24,7 @@ public:
 
 private:
 	void onPlatformChanged();
+	void onServerChanged();
 	void validateNow();
 
 	core::Destination base_;
@@ -37,7 +38,7 @@ private:
 	QComboBox *codec_;
 	QComboBox *encoder_;
 	QSpinBox *audioKbps_;
-	QSpinBox *track_;
+	QComboBox *track_;
 	QLabel *issues_;
 	QPushButton *ok_ = nullptr;
 };

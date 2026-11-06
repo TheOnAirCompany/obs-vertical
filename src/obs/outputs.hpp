@@ -26,9 +26,10 @@ struct OutputStatus {
 	OutputState state = OutputState::Idle;
 	QString error;
 	uint64_t startedNs = 0;
-	double kbps = 0.0;
+	double kbps = -1.0; /* over the last second; < 0 until measured */
 	int dropped = 0;
 	int total = 0;
+	int attempt = 0; /* reconnect attempt (1-based) while Reconnecting */
 };
 
 class Outputs : public QObject {
@@ -36,6 +37,10 @@ class Outputs : public QObject {
 
 public:
 	static Outputs &instance();
+
+	/* Reconnection of the streams: attempts and delay between them. */
+	static constexpr int kReconnectRetries = 25;
+	static constexpr int kReconnectDelaySec = 2;
 
 	/* ---- streaming ---- */
 	bool startDestination(const std::string &id, QString *error);
@@ -70,6 +75,16 @@ public:
 
 	/* "Apple VT H264 Hardware Encoder · 2 video encoders for 3 outputs". */
 	QString encoderSummary() const;
+	/* A running output encodes video on the CPU (x264): the dock warns. */
+	bool softwareEncoderInUse() const;
+	int videoEncoderCount() const { return (int)video_.size(); }
+	/* A hardware video encoder exists (what "auto" picks). */
+	bool hardwareEncoderAvailable() const;
+	/* Mixer index of the audio encoder of a running output, SIZE_MAX when none. */
+	size_t audioMixerFor(const std::string &id) const;
+	static constexpr const char *recordId() { return kRecordId; }
+	/* Number of destinations streaming (Live). */
+	int liveStreamCount() const;
 	/* Encoder types and output types found at runtime (logged once). */
 	std::vector<core::EncoderCandidate> videoEncoders() const;
 

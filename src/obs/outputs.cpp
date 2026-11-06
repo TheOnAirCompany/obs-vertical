@@ -1,5 +1,8 @@
 #include "obs/outputs.hpp"
 
+#include "core/dock-model.hpp"
+#include "obs/audio-mix.hpp"
+#include "obs/av-sync.hpp"
 #include "obs/text.hpp"
 #include "obs/vertical.hpp"
 #ifdef VERTICAL_VIRTUALCAM
@@ -164,7 +167,9 @@ obs_encoder_t *Outputs::acquireAudio(const core::EncoderSettings &s, QString *er
 	OBSDataAutoRelease settings = obs_data_create();
 	obs_data_set_int(settings, "bitrate", s.audio.bitrateKbps);
 	const std::string name = "Vertical audio " + std::to_string(audio_.size() + 1);
-	const size_t mixer = (size_t)std::clamp(s.audio.track, 1, 6) - 1;
+	/* Track 0: the vertical mix, with the user's exclusions (the track Vertical manages). */
+	const size_t mixer = s.audio.track == 0 ? AudioMix::instance().mixIndex()
+						: (size_t)std::clamp(s.audio.track, 1, core::kTrackCount) - 1;
 	obs_encoder_t *enc = obs_audio_encoder_create(id.c_str(), name.c_str(), settings, mixer, nullptr);
 	if (!enc) {
 		if (error)
@@ -172,6 +177,7 @@ obs_encoder_t *Outputs::acquireAudio(const core::EncoderSettings &s, QString *er
 		return nullptr;
 	}
 	obs_encoder_set_audio(enc, obs_get_audio());
+	obs_log(LOG_INFO, "audio encoder '%s' (%d kbps) on track %zu", id.c_str(), s.audio.bitrateKbps, mixer + 1);
 	audio_.push_back({key, enc, 1, id, false});
 	return enc;
 }
@@ -336,7 +342,7 @@ bool Outputs::startDestination(const std::string &id, QString *error)
 		return false;
 	}
 	obs_output_set_service(r.output, r.service);
-	obs_output_set_reconnect_settings(r.output, 25, 2);
+	obs_output_set_reconnect_settings(r.output, kReconnectRetries, kReconnectDelaySec);
 	obs_log(LOG_INFO, "starting '%s' (%s, %s)", d->name.c_str(), core::protocolName(url.protocol),
 		url.host.c_str()); /* never log the key */
 	return launch(std::move(r), d->encoding, true, error);
@@ -624,16 +630,45 @@ QString Outputs::encoderSummary() const
 		.arg(users);
 }
 
+int Outputs::liveStreamCount() const
+{
+	int n = 0;
+	for (const auto &[id, r] : running_)
+		if (id != kRecordId && id != kReplayId && id != kVirtualCamId && r.status.state == OutputState::Live)
+			n++;
+	return n;
+}
+
+bool Outputs::softwareEncoderInUse() const
+{
+	if (!video_.empty())
+		return std::any_of(video_.begin(), video_.end(), [](const PooledEncoder &p) { return !p.hardware; });
+	return false;
+}
+
+bool Outputs::hardwareEncoderAvailable() const
+{
+	return core::chooseVideoEncoder(videoEncoders(), core::VideoEncoding()).hardware;
+}
+
+size_t Outputs::audioMixerFor(const std::string &id) const
+{
+	const Running *r = find(id);
+	obs_encoder_t *enc = r ? obs_output_get_audio_encoder(r->output, 0) : nullptr;
+	return enc ? obs_encoder_get_mixer_index(enc) : SIZE_MAX;
+}
+
 void Outputs::tick()
 {
+	avsync::update();
 	const uint64_t now = os_gettime_ns();
 	for (auto &[id, r] : running_) {
 		if (r.status.state != OutputState::Live && r.status.state != OutputState::Reconnecting)
 			continue;
 		const uint64_t bytes = obs_output_get_total_bytes(r.output);
-		if (r.lastBytesNs && now > r.lastBytesNs && bytes >= r.lastBytes)
-			r.status.kbps =
-				(double)(bytes - r.lastBytes) * 8.0 / 1000.0 / ((double)(now - r.lastBytesNs) / 1e9);
+		const double kbps = core::kbpsBetween(r.lastBytes, r.lastBytesNs, bytes, now);
+		if (kbps >= 0.0)
+			r.status.kbps = kbps;
 		r.lastBytes = bytes;
 		r.lastBytesNs = now;
 		r.status.dropped = obs_output_get_frames_dropped(r.output);
@@ -698,8 +733,13 @@ void Outputs::onStopped(obs_output_t *output, int code, const QString &lastError
 void Outputs::onReconnect(obs_output_t *output, bool reconnecting)
 {
 	for (auto &[id, r] : running_)
-		if (r.output == output)
+		if (r.output == output) {
 			r.status.state = reconnecting ? OutputState::Reconnecting : OutputState::Live;
+			/* "reconnect" fires once per attempt. */
+			r.status.attempt = reconnecting ? r.status.attempt + 1 : 0;
+			/* The byte counter starts again with the new connection. */
+			r.lastBytesNs = 0;
+		}
 	emit statusChanged();
 }
 
